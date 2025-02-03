@@ -1,0 +1,9 @@
+django==4.0
+fastapi==0.75.0
+uvicorn==0.17.0
+sqlalchemy==1.4.31
+psycopg2-binary==2.9.3
+python-dotenv==0.19.2
+pyjwt==2.3.0
+alembic==1.7.7
+azure-storage-blob==12.8.0
