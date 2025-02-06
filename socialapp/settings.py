@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
     'accounts',
 ]
 
@@ -95,7 +96,16 @@ AZURE_ACCOUNT_NAME = 'ireelsstorage'
 AZURE_ACCOUNT_KEY = 'CbYWxqotxPU6vn8r2i94fMte5yDU1+ptexvE7kNCgmIux+lkhZnhUBOkiOp9U+kYEpSlBfZ2wqZa+AStfO/Otw=='
 AZURE_CONTAINER = 'media'
 
+SITE_ID = 1
+SITE_URL = "http://127.0.0.1:8000"
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend' # For Deployment
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend' # For Development
+EMAIL_HOST = 'smtp.gmail.com'  # Gmail SMTP server
+EMAIL_PORT = 587  # Use 465 for SSL
+EMAIL_USE_TLS = True  # Use TLS for secure connection
+EMAIL_HOST_USER = 'palle.saisneha@gmail.com'  # Your email address
+EMAIL_HOST_PASSWORD = 'muvr mwlc wjdu dhll'  # Your email password
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
