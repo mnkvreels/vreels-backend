@@ -10,6 +10,11 @@ from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from django.contrib import messages
 from .forms import RegistrationForm
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
+
+def get_csrf_token(request):
+    return JsonResponse({"csrftoken": get_token(request)})
 
 def home(request):
     # Check if the user is authenticated
