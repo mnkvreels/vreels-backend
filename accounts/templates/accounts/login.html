@@ -18,6 +18,7 @@
     {% if error %}
         <p>{{ error }}</p>
     {% endif %}
-    <a href="{% url 'register' %}">Don't have an account? Register here.</a>
+    <a href="{% url 'register' %}">Don't have an account? Register here.</a><br>
+    <a href="{% url 'password_reset' %}">Forgot your password? Reset Password</a>
 </body>
 </html>
