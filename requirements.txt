@@ -1,4 +1,4 @@
-aiosmtplib==4.0.0
+aiosmtplib==3.0.2
 alembic==1.7.7
 anyio==3.7.1
 asgiref==3.8.1
