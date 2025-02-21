@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from .models import Activity
+from ..models.activity import Activity
 
 
 # get activity of a user by username

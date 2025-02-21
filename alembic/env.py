@@ -19,11 +19,8 @@ DATABASE_URL = "mssql+pyodbc://sqladmin:MnkLlc%4025@sqlddatabbasedemo.database.w
 
 engine = create_engine(DATABASE_URL)
 
-from database import Base
 # Import the Base from all of your models
-from auth.models import Base as UsersBase
-from post.models import Base as PostsBase
-from activity.models import Base as ActivityBase
+from src.models import Base
 # from calls.models import Base as CallsBase
 # from notifications.models import Base as NotificationsBase
 # from accounts.models import Base as AccountsBase
