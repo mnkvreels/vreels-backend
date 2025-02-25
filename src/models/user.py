@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Integer, String, Boolean, Enum, ForeignKey
+from sqlalchemy import Column, Date, DateTime, Integer, String, Boolean, Enum, ForeignKey, BigInteger
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship, backref
 from src.database import Base
@@ -17,9 +17,9 @@ class User(Base):
     __tablename__ = "Users"
 
     id = Column(Integer, primary_key=True, index=True)
-    phone_number = Column(Integer, unique=True)
+    phone_number = Column(BigInteger, unique=True)
     username = Column(String(255), unique=True)
-    hashed_password = Column(String, nullable=False)
+    # hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
@@ -42,5 +42,5 @@ class User(Base):
                              secondaryjoin=id == Follow.follower_id,
                              backref="following")
 
-    followers_count = Column(Integer, default=0)
-    following_count = Column(Integer, default=0)
+    followers_count = Column(BigInteger, default=0)
+    following_count = Column(BigInteger, default=0)

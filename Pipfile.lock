@@ -1412,15 +1412,6 @@
             "markers": "python_version >= '3.8'",
             "version": "==2.2.1"
         },
-        "twilio": {
-            "hashes": [
-                "sha256:284295946a5dcdaae65de9116c35db9065e1f3bd237d81da05b89fe1825013c6",
-                "sha256:8db69103a850cd05aaaa6bfb6952ef7a5d784aaff83f01d9a0c594b5ce784cd1"
-            ],
-            "index": "pypi",
-            "markers": "python_full_version >= '3.7.0'",
-            "version": "==9.4.5"
-        },
         "typing-extensions": {
             "hashes": [
                 "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d",
