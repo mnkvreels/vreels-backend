@@ -18,7 +18,7 @@ class UserCreate(UserBase):
     """
     UserCreate class is used when creating a new user, adding the password field.
     """
-    # password: str  # User's password (to be hashed later)
+    password: str  # User's password (to be hashed later)
 
 
 # Class for updating user profile information, inheriting from BaseModel
@@ -51,16 +51,16 @@ class User(UserBase, UserUpdate):
         # Tells Pydantic to treat this model as an ORM model (SQLAlchemy)
         orm_mode = True
         
-# class VerifyOTPRequest(BaseModel):
-#     phone_number: str
-#     otp: str
+class VerifyOTPRequest(BaseModel):
+    phone_number: str
+    otp: str
 
-# # Request OTP for Password Reset
-# class ResetPasswordRequest(BaseModel):
-#     phone_number: str
+# Request OTP for Password Reset
+class ResetPasswordRequest(BaseModel):
+    phone_number: str
 
-# # Verify OTP and Set New Password
-# class ResetPasswordVerify(BaseModel):
-#     phone_number: str
-#     otp: str
-#     new_password: str
+# Verify OTP and Set New Password
+class ResetPasswordVerify(BaseModel):
+    phone_number: str
+    otp: str
+    new_password: str

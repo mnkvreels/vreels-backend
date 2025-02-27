@@ -51,6 +51,7 @@ databases = "*"
 sqlalchemy = "*"
 pyodbc = "*"
 asyncpg = "*"
+twilio = "*"
 
 [dev-packages]
 
