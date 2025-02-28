@@ -12,6 +12,10 @@ class Follow(Base):
 
     follower_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
     following_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
+    
+    # Define relationships to access follower and following users
+    follower = relationship("User", foreign_keys=[follower_id], backref="following_users")
+    following = relationship("User", foreign_keys=[following_id], backref="followers_users")
 
 class User(Base):
     __tablename__ = "Users"

@@ -86,7 +86,7 @@ def get_public_keys():
 #     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 # Function to check for existing user by username or email
-async def existing_user(db: Session, username: str, phone_number: int):
+async def existing_user(db: Session, username: str, phone_number: int = None):
     """
     Check if a user with the given username or email already exists in the database.
     Returns the existing user if found, otherwise returns None.
@@ -94,7 +94,8 @@ async def existing_user(db: Session, username: str, phone_number: int):
     db_user = db.query(User).filter(User.username == username).first()
     if db_user:
         return db_user
-    db_user = db.query(User).filter(User.phone_number == phone_number).first()
+    if phone_number:
+        db_user = db.query(User).filter(User.phone_number == phone_number).first()
     return db_user
 
 

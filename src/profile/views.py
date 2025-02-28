@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status, Depends, HTTPException
 from sqlalchemy.orm import Session
-
+from pydantic import BaseModel
 from ..database import get_db
 from .schemas import Profile, FollowersList, FollowingList
 from .service import (
@@ -12,46 +12,47 @@ from .service import (
     existing_user,
 )
 from ..auth.service import get_current_user
+from ..models import User
 
+class UserRequest(BaseModel):
+    username: str
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
-
-@router.get("/user/{username}", response_model=Profile)
-async def profile(username: str, db: Session = Depends(get_db)):
-    db_user = await existing_user(db, username, "")
+@router.get("/user", response_model=Profile)
+async def profile(request: UserRequest, db: Session = Depends(get_db)):
+    db_user = await existing_user(db, request.username)
     if not db_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Invalid username"
         )
-
     return db_user
 
 
-@router.post("/follow/{username}", status_code=status.HTTP_204_NO_CONTENT)
-async def follow(username: str, token: str, db: Session = Depends(get_db)):
-    db_user = await get_current_user(db, token)
+@router.post("/follow", status_code=status.HTTP_204_NO_CONTENT)
+async def follow(request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_user = current_user
     if not db_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="invalid token"
         )
 
-    res = await follow_svc(db, db_user.username, username)
+    res = await follow_svc(db, db_user.username, request.username)
     if res == False:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="could not follow"
         )
 
 
-@router.post("/unfollow/{username}", status_code=status.HTTP_204_NO_CONTENT)
-async def follow(username: str, token: str, db: Session = Depends(get_db)):
-    db_user = await get_current_user(db, token)
+@router.post("/unfollow", status_code=status.HTTP_204_NO_CONTENT)
+async def follow(request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_user = current_user
     if not db_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="invalid token"
         )
 
-    res = await unfollow_svc(db, db_user.username, username)
+    res = await unfollow_svc(db, db_user.username, request.username)
     if res == False:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="could not follow"
@@ -59,8 +60,7 @@ async def follow(username: str, token: str, db: Session = Depends(get_db)):
 
 
 @router.get("/followers", response_model=FollowersList)
-async def get_followers(token: str, db: Session = Depends(get_db)):
-    current_user = await get_current_user(db, token)
+async def get_followers(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token"
@@ -69,8 +69,7 @@ async def get_followers(token: str, db: Session = Depends(get_db)):
 
 
 @router.get("/following", response_model=FollowingList)
-async def get_followers(token: str, db: Session = Depends(get_db)):
-    current_user = await get_current_user(db, token)
+async def get_followers(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token"

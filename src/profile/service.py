@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ..models.user import User, Follow
@@ -66,20 +67,23 @@ async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
     if not db_user:
         return []
 
-    db_followers = (
-        db.query(Follow)
-        .filter_by(following_id=user_id)
-        .join(User, User.id == Follow.follower_id)
-        .all()
-    )
+    try:
+        db_followers = (
+            db.query(Follow)
+            .filter(Follow.following_id == user_id)
+            .join(User, User.id == Follow.follower_id)
+            .all()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Database error")
 
     followers = []
-    for user in db_followers:
+    for follow in db_followers:
         followers.append(
             {
-                "profile_pic": user.follower.profile_pic,
-                "name": user.follower.name,
-                "username": user.follower.username,
+                "profile_pic": follow.follower.profile_pic,
+                "name": follow.follower.name,
+                "username": follow.follower.username,
             }
         )
 
@@ -92,19 +96,23 @@ async def get_following_svc(db: Session, user_id: int) -> list[FollowingList]:
     if not db_user:
         return []
 
-    db_followers = (
-        db.query(Follow)
-        .filter_by(follower_id=user_id)
-        .join(User, User.id == Follow.following_id)
-        .all()
-    )
+    try:
+        db_followers = (
+            db.query(Follow)
+            .filter(Follow.follower_id == user_id)
+            .join(User, User.id == Follow.following_id)
+            .all()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Database error")
+
     following = []
-    for user in db_followers:
+    for follow in db_followers:
         following.append(
             {
-                "profile_pic": user.follower.profile_pic,
-                "name": user.follower.name,
-                "username": user.follower.username,
+                "profile_pic": follow.follower.profile_pic,
+                "name": follow.follower.name,
+                "username": follow.follower.username,
             }
         )
 
