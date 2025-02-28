@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from datetime import date, datetime
 from typing import Optional
+
+from sqlalchemy import BigInteger
 from .enums import GenderEnum
 
 # Base class for user data with essential fields
@@ -11,6 +13,9 @@ class UserBase(BaseModel):
     """
     phone_number: int  # User's phone number
     username: str # User's username
+    
+    class Config:
+        arbitrary_types_allowed = True 
 
 
 # Class for creating a new user, inheriting from UserBase

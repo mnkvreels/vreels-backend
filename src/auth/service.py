@@ -2,6 +2,7 @@ from os import stat
 from jwt import PyJWKClient
 import requests
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy import BigInteger, and_
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
@@ -50,31 +51,31 @@ def get_public_keys():
 # PUBLIC_KEYS = get_public_keys()
 
 # Token verification function
-def verify_jwt(token: str):
-    """
-    Verifies the JWT token using Azure AD B2C public keys and returns the decoded payload.
-    """
-    try:
-        # Fetch the public JWKS from Azure AD B2C
-        jwks_client = PyJWKClient(Settings.JWKS_URL)
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
+# def verify_jwt(token: str):
+#     """
+#     Verifies the JWT token using Azure AD B2C public keys and returns the decoded payload.
+#     """
+#     try:
+#         # Fetch the public JWKS from Azure AD B2C
+#         jwks_client = PyJWKClient(Settings.JWKS_URL)
+#         signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-        # Decode the token using RS256
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            audience=Settings.CLIENT_ID,  # Ensures the token is for our app
-            issuer=Settings.ISSUER,  # Ensures it's from Azure AD B2C
-        )
+#         # Decode the token using RS256
+#         payload = jwt.decode(
+#             token,
+#             signing_key.key,
+#             algorithms=["RS256"],
+#             audience=Settings.CLIENT_ID,  # Ensures the token is for our app
+#             issuer=Settings.ISSUER,  # Ensures it's from Azure AD B2C
+#         )
 
-        # Return user data
-        return payload
+#         # Return user data
+#         return payload
 
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+#     except jwt.ExpiredSignatureError:
+#         raise HTTPException(status_code=401, detail="Token has expired")
+#     except jwt.InvalidTokenError:
+#         raise HTTPException(status_code=401, detail="Invalid token")
 
 # Function to hash passwords using bcrypt
 # def hash_password(password: str) -> str:
@@ -101,31 +102,59 @@ async def existing_user(db: Session, username: str, phone_number: int):
 async def create_access_token(username: str, id: int):
     """
     Create and return a JWT access token containing the username and user ID.
-    The token will expire in 30 days.
+    The token will expire in a specified number of minutes.
     """
     encode = {"sub": username, "id": id}
-    expires = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINS)
-    encode.update({"exp": expires})
-    return jwt.encode(encode, Settings.SECRET_KEY, algorithm=ALGORITHM)
+    
+    # Set expiration time in minutes (from your settings)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=Settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # Convert expiration time to a Unix timestamp (seconds since epoch)
+    encode.update({"exp": expires.timestamp()})  # Convert to seconds
+    
+    # Return the JWT token
+    return jwt.encode(encode, Settings.SECRET_KEY, algorithm=Settings.ALGORITHM)
 
 
 # Function to get the current user based on the provided token
-async def get_current_user(request: Request, db: Session = Depends(get_db)):
-    token = request.headers.get("Authorization")
-    if not token:
-        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Missing token")
+async def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_bearer)):
+    """
+    Decode the JWT token, verify its validity, and return the user associated with the token.
+    Returns None if the token is invalid or expired.
+    """
+    print(f"Received token: {token}")  # Debugging line
+    try:
+        # Decode the JWT token
+        payload = jwt.decode(token, Settings.SECRET_KEY, algorithms=[ALGORITHM])
+        print(f"Decoded payload: {payload}")  # Debugging line
 
-    user_data = verify_jwt(token.replace("Bearer ", ""))  # Validate Azure B2C Token
+        username: str = payload.get("sub")
+        user_id: int = payload.get("id")
+        expires: int = payload.get("exp")  # Expiration timestamp
+
+        # Debugging expiration
+        print(f"Token expires at: {datetime.fromtimestamp(expires)}")
+
+        # Check if the token has expired
+        if datetime.fromtimestamp(expires) < datetime.now():
+            print("Token has expired!")  # Debugging line
+            raise HTTPException(status_code=401, detail="Token has expired")
+
+        # Check if the username or user ID is missing from the token
+        if username is None or user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # Fetch the user from the database
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return user
     
-    if not user_data:
-        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except JWTError as e:
+        print(f"JWT Decode Error: {str(e)}")  # Debugging line
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-    # Query user from database (optional)
-    user = db.query(User).filter(User.id == user_data.get("oid")).first()
-    if not user:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="User not found")
-
-    return user
 
 
 # Function to get a user by their user ID
@@ -162,18 +191,18 @@ async def create_user(db: Session, user: UserCreate):
 
 
 # Function to authenticate a user by verifying their username and password
-# async def authenticate(db: Session, username: str, password: str):
-#     """
-#     Authenticate a user by verifying their username and password.
-#     Returns the user if authentication is successful, otherwise returns None.
-#     """
-#     db_user = db.query(User).filter(User.username == username).first()
-#     if not db_user:
-#         print("No user found with this username")
-#         return None
-#     if not bcrypt_context.verify(password, db_user.hashed_password):
-#         return None
-#     return db_user
+async def authenticate(db: Session, username: str, phone_number: BigInteger):
+    """
+    Authenticate a user by verifying their username and password.
+    Returns the user if authentication is successful, otherwise returns None.
+    """
+    db_user = db.query(User).filter(and_(User.username == username, User.phone_number == phone_number)).first()
+
+    if not db_user:
+        print("No user found with this username")
+        return None
+
+    return db_user
 
 
 # Function to update an existing user's profile with new data
@@ -190,3 +219,5 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     db_user.profile_pic = user_update.profile_pic or db_user.profile_pic
 
     db.commit()
+    db.refresh(db_user)  # Refresh the user instance to get updated data
+    return db.query(User).filter(User.id == db_user.id).first()
