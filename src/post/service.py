@@ -31,7 +31,7 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int):
     # check if user_id is valid
     db_post = Post(
         content=post.content,
-        image=post.image,
+        media=post.media,
         location=post.location,
         author_id=user_id,
     )
@@ -136,7 +136,7 @@ async def like_post_svc(db: Session, post_id: int, username: str):
         username=post.author.username,
         liked_post_id=post_id,
         username_like=username,
-        liked_post_image=post.image,
+        liked_media=post.media,
     )
     db.add(like_activity)
 

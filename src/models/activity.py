@@ -15,8 +15,8 @@ class Activity(Base):
     username_like = Column(String)  # User who liked the post
     username_comment = Column(String)  # User who commented
 
-    liked_post_image = Column(String)  # Image of liked post
-    commented_post_image = Column(String)  # Image of commented post
+    liked_media = Column(String)  # Image of liked post
+    commented_media = Column(String)  # Image of commented post
 
     followed_username = Column(String)  # Username of the user who followed
     followed_user_pic = Column(String)  # Profile pic of the followed user

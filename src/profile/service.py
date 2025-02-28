@@ -81,9 +81,9 @@ async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
     for follow in db_followers:
         followers.append(
             {
-                "profile_pic": follow.follower.profile_pic,
-                "name": follow.follower.name,
-                "username": follow.follower.username,
+                "profile_pic": follow.follower_user.profile_pic,
+                "name": follow.follower_user.name,
+                "username": follow.follower_user.username,
             }
         )
 
@@ -110,9 +110,9 @@ async def get_following_svc(db: Session, user_id: int) -> list[FollowingList]:
     for follow in db_followers:
         following.append(
             {
-                "profile_pic": follow.follower.profile_pic,
-                "name": follow.follower.name,
-                "username": follow.follower.username,
+                "profile_pic": follow.following_user.profile_pic,
+                "name": follow.following_user.name,
+                "username": follow.following_user.username,
             }
         )
 

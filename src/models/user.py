@@ -14,8 +14,9 @@ class Follow(Base):
     following_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
     
     # Define relationships to access follower and following users
-    follower = relationship("User", foreign_keys=[follower_id], backref="following_users")
-    following = relationship("User", foreign_keys=[following_id], backref="followers_users")
+    following_user = relationship("User", back_populates="followers", foreign_keys=[follower_id])
+    follower_user = relationship("User", back_populates="following", foreign_keys=[following_id])
+
 
 class User(Base):
     __tablename__ = "Users"
@@ -45,6 +46,9 @@ class User(Base):
                              primaryjoin=id == Follow.following_id,
                              secondaryjoin=id == Follow.follower_id,
                              backref="following")
+    
+    followers = relationship("Follow", back_populates="following_user", foreign_keys="[Follow.follower_id]")
+    following = relationship("Follow", back_populates="follower_user", foreign_keys="[Follow.following_id]")
 
     followers_count = Column(BigInteger, default=0)
     following_count = Column(BigInteger, default=0)
