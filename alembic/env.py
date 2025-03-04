@@ -12,20 +12,22 @@ from alembic import context
 # Add the app directory to the sys.path so that we can import our models
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
 
+# Ensure that 'src' is in the Python path for Alembic to access the models
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
 DATABASE_URL = "mssql+pyodbc://sqladmin:MnkLlc%4025@sqlddatabbasedemo.database.windows.net:1433/vreeels_django_database?driver=ODBC+Driver+17+for+SQL+Server"
 
 engine = create_engine(DATABASE_URL)
 
 # Import the Base from all of your models
-from users.models import Base as UsersBase
-# from posts.models import Base as PostsBase
+from src.models import Base
 # from calls.models import Base as CallsBase
 # from notifications.models import Base as NotificationsBase
 # from accounts.models import Base as AccountsBase
 # from reels.models import Base as ReelsBase
 
 # This is where Alembic will be looking for models
-target_metadata = UsersBase.metadata
+target_metadata = Base.metadata
 # []    # UsersBase.metadata,
     # PostsBase.metadata,
     # CallsBase.metadata,
@@ -47,7 +49,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = UsersBase.metadata
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
