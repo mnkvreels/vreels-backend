@@ -1,39 +1,41 @@
-name: Deploy Python App to Azure Web App - vreels
+name: Deploy to Azure
 
 on:
   push:
     branches:
-      - main  # Change this to your deployment branch
+      - main  # You can change this to another branch if needed
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.8'
-
-    - name: Set PYTHONPATH environment variable
-      run: echo "PYTHONPATH=$(pwd)/src" >> $GITHUB_ENV
     
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pipenv
-        pipenv install --deploy --ignore-pipfile
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Run pytest (skip if no tests)
-      run: |
-        pytest || echo "No tests found, skipping..."
+      # Step 2: Set up Python environment (adjust version as needed)
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
 
-    - name: Deploy to Azure Web App
-      uses: azure/webapps-deploy@v3
-      with:
-        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: .
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Step 4: Set up Azure login using the service principal credentials
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Step 5: Deploy to Azure Web App
+      - name: Deploy to Azure WebApp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          publish-profile: ${{ secrets.AZURE_CREDENTIALS }}

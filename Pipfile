@@ -41,7 +41,6 @@ starlette = "==0.17.1"
 typing-extensions = "==4.12.2"
 urllib3 = "==2.2.3"
 fastapi = "*"
-uvicorn = "*"
 python-multipart = "*"
 azure-storage-blob = "*"
 python-dotenv = "*"
@@ -50,8 +49,9 @@ sqlalchemy = "*"
 pyodbc = "*"
 asyncpg = "*"
 python-jose = "*"
-gunicorn = "*"
 pytest = "*"
+gunicorn = "*"
+uvicorn = "*"
 
 [dev-packages]
 

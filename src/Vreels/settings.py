@@ -23,8 +23,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-=zzn-uq121w*elzh)_(hapbyq0zk&9ay+1b3flxxa3lnkiz0ao'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
+DEBUG = False
+AZURE_CREDENTIALS = {
+  "clientId": "62dc061b-49ae-4e1b-aad5-a9fe248d6c15",
+  "clientSecret": "vFO8Q~xPsRBWKUeyuhzZF1jvBGRryWezqmBOCb-j",
+  "subscriptionId": "1c974473-4af6-4064-b19f-f02b7c0073e5",
+  "tenantId": "7a9eab3a-47ee-49e6-9bfb-607758cacf44",
+  "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
+  "resourceManagerEndpointUrl": "https://management.azure.com/",
+  "activeDirectoryGraphResourceId": "https://graph.windows.net/",
+  "sqlManagementEndpointUrl": "https://management.core.windows.net:8443/",
+  "galleryEndpointUrl": "https://gallery.azure.com/",
+  "managementEndpointUrl": "https://management.core.windows.net/"
+}
+AZURE_WEBAPP_NAME = "vreels"
+AZURE_RESOURCE_GROUP = "sqldatabasedemo"
+AZURE_SUBSCRIPTION_ID = "1c974473-4af6-4064-b19f-f02b7c0073e5"
 ALLOWED_HOSTS = [
     'vreels.azurewebsites.net',
     'www.vreels.azurewebsites.net',  # Optional, for subdomains
