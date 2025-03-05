@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "d05a9140aea1bd2b628947c3ba4b49ad7ad293cd99fd198e137a4b98592f3957"
+            "sha256": "e8a85c37b6c415f1e926de4ed5549ad21b9a94a3180b594204afb6274ab104f5"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1222,13 +1222,11 @@
             "version": "==1.0.1"
         },
         "python-jose": {
-            "extras": [
-                "crptography"
-            ],
             "hashes": [
                 "sha256:9a9a40f418ced8ecaf7e3b28d69887ceaa76adad3bcaa6dae0d9e596fec1d680",
                 "sha256:9c9f616819652d109bd889ecd1e15e9a162b9b94d682534c9c2146092945b78f"
             ],
+            "index": "pypi",
             "version": "==3.4.0"
         },
         "python-multipart": {

@@ -43,7 +43,6 @@ typing-extensions = "==4.12.2"
 urllib3 = "==2.2.3"
 fastapi = "*"
 uvicorn = "*"
-python-jose = {extras = ["crptography"], version = "*"}
 python-multipart = "*"
 azure-storage-blob = "*"
 python-dotenv = "*"
@@ -51,6 +50,7 @@ databases = "*"
 sqlalchemy = "*"
 pyodbc = "*"
 asyncpg = "*"
+python-jose = "*"
 
 [dev-packages]
 
