@@ -31,7 +31,6 @@ psycopg2-binary = "==2.9.3"
 pycparser = "==2.22"
 pydantic = "==1.10.21"
 pyjwt = "==2.3.0"
-pytest = "==8.3.4"
 pytz = "==2025.1"
 requests = "==2.32.3"
 requests-oauthlib = "==2.0.0"
@@ -51,6 +50,8 @@ sqlalchemy = "*"
 pyodbc = "*"
 asyncpg = "*"
 python-jose = "*"
+gunicorn = "*"
+pytest = "*"
 
 [dev-packages]
 

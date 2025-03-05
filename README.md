@@ -29,7 +29,6 @@ venv\Scripts\activate
 3. Install Dependencies
 Install the required packages for the project:
 
-pip install -r requirements.txt
 
 4. Set Up Database Configuration
 The application uses SQL Server. Update the database settings in the settings.py file with your database credentials:
