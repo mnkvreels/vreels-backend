@@ -18,10 +18,8 @@ jobs:
       with:
         python-version: '3.8'
 
-    - name: Create and start virtual environment
-      run: |
-        python -m venv venv
-        source venv/bin/activate
+    - name: Set PYTHONPATH environment variable
+      run: echo "PYTHONPATH=$(pwd)/src" >> $GITHUB_ENV
     
     - name: Install Dependencies
       run: |
