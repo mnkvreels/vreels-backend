@@ -76,5 +76,4 @@ jobs:
         with:
           app-name: 'vreels'
           slot-name: 'Production'
-          package: Vreels/
           
