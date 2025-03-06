@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+import re
+from typing import List
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
@@ -19,6 +21,7 @@ from .service import (
 )
 from ..auth.service import get_current_user, existing_user
 from ..auth.schemas import User
+from ..azure_blob import upload_to_azure_blob
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -34,21 +37,29 @@ class PostRequest(BaseModel):
 class CommentRequest(BaseModel):
     post_id: int
     content: str
+    
+# Regex pattern to check if a string is a valid URL
+URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
 @router.post("/", response_model=Post, status_code=status.HTTP_201_CREATED)
-async def create_post(post: PostCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # verify the token
+async def create_post(content: str = Form(...), file: UploadFile = Form(...), location: str = Form(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     user = current_user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
+    post = PostCreate(content=content, location=location)
+    file_url = None
+    if file:
+        try:
+            file_url = await upload_to_azure_blob(file)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # create post
-    db_post = await create_post_svc(db, post, user.id)
+    # Create the post with the file URL (if any)
+    db_post = await create_post_svc(db, post, current_user.id, file_url)
 
     return db_post
-
 
 @router.get("/user", response_model=list[Post])
 async def get_current_user_posts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

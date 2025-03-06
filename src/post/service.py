@@ -27,11 +27,11 @@ async def create_hashtags_svc(db: Session, post: Post):
 
 
 # create post
-async def create_post_svc(db: Session, post: PostCreate, user_id: int):
+async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url: str):
     # check if user_id is valid
     db_post = Post(
         content=post.content,
-        media=post.media,
+        media=file_url,
         location=post.location,
         author_id=user_id,
     )

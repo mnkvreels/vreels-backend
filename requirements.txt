@@ -20,6 +20,7 @@ fastapi==0.75.0
 filelock==3.17.0
 grpcio==1.70.0
 grpcio-tools==1.70.0
+gunicorn==23.0.0
 h11==0.14.0
 idna==3.10
 iniconfig==2.0.0
@@ -58,4 +59,3 @@ typing_extensions==4.12.2
 urllib3==2.2.3
 uvicorn==0.17.0
 virtualenv==20.29.2
-gunicorn==23.0.0

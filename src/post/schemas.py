@@ -36,7 +36,7 @@ class Like(BaseModel):
 # Pydantic model for Post creation (when creating a new post)
 class PostCreate(BaseModel):
     content: Optional[str] = None
-    media: str
+    media: Optional[str] = None
     location: Optional[str] = None
 
     class Config:
