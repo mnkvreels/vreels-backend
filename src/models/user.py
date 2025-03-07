@@ -39,7 +39,7 @@ class User(Base):
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
-    
+    likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
     # Many-to-Many Relationships
     liked_posts = relationship("Post", secondary="post_likes", back_populates="liked_by_users")
     followers = relationship("User", secondary="follows",
@@ -52,3 +52,4 @@ class User(Base):
 
     followers_count = Column(BigInteger, default=0)
     following_count = Column(BigInteger, default=0)
+    saved_posts = relationship("UserSavedPosts", back_populates="user", cascade="all, delete")

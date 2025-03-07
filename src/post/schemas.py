@@ -56,3 +56,7 @@ class Post(PostCreate):
 
     class Config:
         orm_mode = True
+
+# Pyndantic model for saving a post (when user tries to save a post)
+class SavePostRequest(BaseModel):
+    post_id: int

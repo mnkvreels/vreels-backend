@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from .schemas import PostCreate, Post
+from .schemas import PostCreate, Post, SavePostRequest
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -18,6 +18,8 @@ from .service import (
     liked_users_post_svc,
     comment_on_post_svc,
     get_comments_for_post_svc,
+    save_post_svc,
+    get_saved_posts_svc
 )
 from ..auth.service import get_current_user, existing_user
 from ..auth.schemas import User
@@ -80,7 +82,15 @@ async def get_user_posts(request: UserRequest, db: Session = Depends(get_db)):
 
     return await get_user_posts_svc(db, user.id)
 
-# Not working yet
+@router.post("/savepost", status_code=status.HTTP_201_CREATED)
+async def save_post(request: SavePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await save_post_svc(db, current_user.id, request.post_id)
+
+@router.get("/savedposts", status_code=status.HTTP_200_OK)
+async def get_saved_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    saved_posts = await get_saved_posts_svc(db, current_user.id)
+    return saved_posts
+
 @router.get("/hashtag/")
 async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends(get_db)):
     return await get_posts_from_hashtag_svc(db, request.hashtag)

@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 import re
 from sqlalchemy import desc
-
+from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema
-from ..models.post import Post, Hashtag, post_hashtags, Comment
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts
 from ..models.user import User
 from ..auth.schemas import User as UserSchema
 from ..models.activity import Activity
@@ -210,3 +210,23 @@ async def get_comments_for_post_svc(db: Session, post_id: int):
 
     comments = db.query(Comment).filter(Comment.post_id == post_id).all()
     return comments
+
+async def save_post_svc(db: Session, user_id: int, post_id: int):
+    # Check if post is already saved by user
+    existing_entry = db.query(UserSavedPosts).filter(
+        UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post_id
+    ).first()
+
+    if existing_entry:
+        raise HTTPException(status_code=400, detail="Post already saved.")
+
+    # Create a new entry in user_saved_posts table
+    saved_post = UserSavedPosts(user_id=user_id, saved_post_id=post_id)
+    db.add(saved_post)
+    db.commit()
+    db.refresh(saved_post)
+
+    return {"message": "Post saved successfully"}
+
+async def get_saved_posts_svc(db: Session, user_id: int):
+    return db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).all()

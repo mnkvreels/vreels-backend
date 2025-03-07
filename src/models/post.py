@@ -21,9 +21,12 @@ post_hashtags = Table(
 # likes model (Tracks who liked which post)
 class Like(Base):
     __tablename__ = "likes"
-
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     post_id = Column(Integer, ForeignKey("posts.id"), primary_key=True)
+    post = relationship("Post", back_populates="likes")
+    user = relationship("User", back_populates="likes")
 
 # Comment Model
 class Comment(Base):
@@ -59,9 +62,11 @@ class Post(Base):
     hashtags = relationship("Hashtag", secondary="post_hashtags", back_populates="posts")
 
     # One-to-Many Relationships
-    likes = relationship("Like", cascade="all, delete-orphan")
+    likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
 
+    saved_by_users = relationship("UserSavedPosts", back_populates="post", cascade="all, delete")
+    
     def update_likes_and_comments_count(self, db_session):
         self.likes_count = db_session.query(Like).filter(Like.post_id == self.id).count()
         self.comments_count = db_session.query(Comment).filter(Comment.post_id == self.id).count()
