@@ -8,10 +8,10 @@ class Follow(Base):
     """
     The Follow class represents a many-to-many relationship between users.
     """
-    __tablename__ = "Follows"
+    __tablename__ = "follows"
 
-    follower_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
-    following_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    following_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     
     # Define relationships to access follower and following users
     following_user = relationship("User", back_populates="followers", foreign_keys=[follower_id])
@@ -19,7 +19,7 @@ class Follow(Base):
 
 
 class User(Base):
-    __tablename__ = "Users"
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     phone_number = Column(BigInteger, unique=True)
@@ -42,7 +42,7 @@ class User(Base):
     
     # Many-to-Many Relationships
     liked_posts = relationship("Post", secondary="post_likes", back_populates="liked_by_users")
-    followers = relationship("User", secondary="Follows",
+    followers = relationship("User", secondary="follows",
                              primaryjoin=id == Follow.following_id,
                              secondaryjoin=id == Follow.follower_id,
                              backref="following")

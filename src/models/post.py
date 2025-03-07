@@ -3,45 +3,45 @@ from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone
 from src.database import Base
 
-# Many-to-Many Association Table (Users ↔ Liked Posts)
+# Many-to-Many Association Table (users ↔ Liked posts)
 post_likes = Table(
     "post_likes", Base.metadata,
-    Column("user_id", Integer, ForeignKey("Users.id", ondelete="CASCADE"), primary_key=True),
-    Column("post_id", Integer, ForeignKey("Posts.id", ondelete="CASCADE"), primary_key=True)
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("post_id", Integer, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
 )
 
-# Many-to-Many Association Table (Posts ↔ Hashtags)
+# Many-to-Many Association Table (posts ↔ hashtags)
 post_hashtags = Table(
     "post_hashtags",
     Base.metadata,
-    Column("post_id", Integer, ForeignKey("Posts.id")),
-    Column("hashtag_id", Integer, ForeignKey("Hashtags.id"))
+    Column("post_id", Integer, ForeignKey("posts.id")),
+    Column("hashtag_id", Integer, ForeignKey("hashtags.id"))
 )
 
-# Likes model (Tracks who liked which post)
+# likes model (Tracks who liked which post)
 class Like(Base):
-    __tablename__ = "Likes"
+    __tablename__ = "likes"
 
-    user_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
-    post_id = Column(Integer, ForeignKey("Posts.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), primary_key=True)
 
 # Comment Model
 class Comment(Base):
-    __tablename__ = "Comments"
+    __tablename__ = "comments"
 
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
-    post_id = Column(Integer, ForeignKey("Posts.id"))
-    user_id = Column(Integer, ForeignKey("Users.id"))
+    post_id = Column(Integer, ForeignKey("posts.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
 
     post = relationship("Post", back_populates="comments")
     user = relationship("User", back_populates="comments")
 
 # Post Model
 class Post(Base):
-    __tablename__ = "Posts"
+    __tablename__ = "posts"
 
     id = Column(Integer, primary_key=True, index=True)
     content = Column(String)
@@ -51,7 +51,7 @@ class Post(Base):
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
 
-    author_id = Column(Integer, ForeignKey("Users.id"))
+    author_id = Column(Integer, ForeignKey("users.id"))
     author = relationship("User", back_populates="posts")
 
     # Many-to-Many Relationships
@@ -68,9 +68,21 @@ class Post(Base):
 
 # Hashtag Model
 class Hashtag(Base):
-    __tablename__ = "Hashtags"
+    __tablename__ = "hashtags"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True)
 
     posts = relationship("Post", secondary="post_hashtags", back_populates="hashtags")
+
+class UserSavedPosts(Base):
+    __tablename__ = "user_saved_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    saved_post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))  # Metadata column
+
+    # Relationships
+    user = relationship("User", back_populates="saved_posts")
+    post = relationship("Post", back_populates="saved_by_users")
