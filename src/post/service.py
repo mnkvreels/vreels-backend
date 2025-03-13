@@ -262,4 +262,8 @@ async def share_post_svc(db: Session, sender_user_id: int, request: SharePostReq
         
 async def get_shared_posts_svc(db: Session, user_id: int):
         """Fetches posts that a specific user has shared."""
-        return db.query(UserSharedPosts).filter(UserSharedPosts.user_id == user_id).all()
+        return db.query(UserSharedPosts).filter(UserSharedPosts.sender_user_id == user_id).all()
+    
+async def get_received_posts_svc(db: Session, user_id: int):
+        """Fetches posts that a specific user has shared."""
+        return db.query(UserSharedPosts).filter(UserSharedPosts.receiver_user_id == user_id).all()

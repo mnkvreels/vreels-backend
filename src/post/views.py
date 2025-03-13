@@ -21,7 +21,8 @@ from .service import (
     save_post_svc,
     get_saved_posts_svc,
     share_post_svc,
-    get_shared_posts_svc
+    get_shared_posts_svc,
+    get_received_posts_svc
 )
 from ..auth.service import get_current_user, existing_user
 from ..auth.schemas import User
@@ -104,6 +105,10 @@ async def share_post(request: SharePostRequest, db: Session = Depends(get_db), c
 @router.get("/sharedposts")
 async def get_shared_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return await get_shared_posts_svc(db, current_user.id)
+
+@router.get("/receivedposts")
+async def get_received_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await get_received_posts_svc(db, current_user.id)
 
 @router.get("/hashtag/")
 async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends(get_db)):

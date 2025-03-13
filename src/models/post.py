@@ -97,8 +97,8 @@ class UserSharedPosts(Base):
     __tablename__ = "user_shared_posts"
 
     id = Column(Integer, primary_key=True, index=True)
-    sender_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    receiver_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    sender_user_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"), nullable=False)
+    receiver_user_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"), nullable=False)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
