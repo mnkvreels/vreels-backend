@@ -53,3 +53,8 @@ class User(Base):
     followers_count = Column(BigInteger, default=0)
     following_count = Column(BigInteger, default=0)
     saved_posts = relationship("UserSavedPosts", back_populates="user", cascade="all, delete")
+    # Relationship for sent shares (user who is sharing)
+    shared_posts_sent = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.sender_user_id]", back_populates="sender", cascade="all, delete")
+
+    # Relationship for received shares (user who receives the shared post)
+    shared_posts_received = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.receiver_user_id]", back_populates="receiver", cascade="all, delete")

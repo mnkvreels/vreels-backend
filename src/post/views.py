@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from .schemas import PostCreate, Post, SavePostRequest
+from .schemas import PostCreate, Post, SavePostRequest, SharePostRequest
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -19,7 +19,9 @@ from .service import (
     comment_on_post_svc,
     get_comments_for_post_svc,
     save_post_svc,
-    get_saved_posts_svc
+    get_saved_posts_svc,
+    share_post_svc,
+    get_shared_posts_svc
 )
 from ..auth.service import get_current_user, existing_user
 from ..auth.schemas import User
@@ -90,6 +92,18 @@ async def save_post(request: SavePostRequest, db: Session = Depends(get_db), cur
 async def get_saved_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     saved_posts = await get_saved_posts_svc(db, current_user.id)
     return saved_posts
+
+@router.post("/sharepost")
+async def share_post(request: SharePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    sender_user_id = current_user.id
+    try:
+        return await share_post_svc(db, sender_user_id, request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/sharedposts")
+async def get_shared_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await get_shared_posts_svc(db, current_user.id)
 
 @router.get("/hashtag/")
 async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends(get_db)):

@@ -60,3 +60,7 @@ class Post(PostCreate):
 # Pyndantic model for saving a post (when user tries to save a post)
 class SavePostRequest(BaseModel):
     post_id: int
+    
+class SharePostRequest(BaseModel):
+    receiver_user_id: int  # The user who will receive the post
+    post_id: int

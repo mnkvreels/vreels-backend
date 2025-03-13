@@ -64,8 +64,9 @@ class Post(Base):
     # One-to-Many Relationships
     likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
-
+    share_count = Column(Integer, default=0)
     saved_by_users = relationship("UserSavedPosts", back_populates="post", cascade="all, delete")
+    shared_by_users = relationship("UserSharedPosts", back_populates="post", cascade="all, delete")
     
     def update_likes_and_comments_count(self, db_session):
         self.likes_count = db_session.query(Like).filter(Like.post_id == self.id).count()
@@ -91,3 +92,16 @@ class UserSavedPosts(Base):
     # Relationships
     user = relationship("User", back_populates="saved_posts")
     post = relationship("Post", back_populates="saved_by_users")
+
+class UserSharedPosts(Base):
+    __tablename__ = "user_shared_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    receiver_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+
+    sender = relationship("User", foreign_keys=[sender_user_id], back_populates="shared_posts_sent")
+    receiver = relationship("User", foreign_keys=[receiver_user_id], back_populates="shared_posts_received")
+    post = relationship("Post", back_populates="shared_by_users")

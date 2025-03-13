@@ -21,6 +21,21 @@ def upgrade():
     op.add_column('likes', sa.Column('id', sa.Integer(), nullable=False))
     op.add_column('likes', sa.Column('created_at', sa.DateTime(), nullable=True))
     op.create_index(op.f('ix_likes_id'), 'likes', ['id'], unique=False)
+    # Create user_shared_posts table if it doesn't exist
+    if not op.get_bind().dialect.has_table(op.get_bind(), 'user_shared_posts'):
+        op.create_table(
+            'user_shared_posts',
+            sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column('sender_user_id', sa.Integer, sa.ForeignKey('users.id'), nullable=False),
+            sa.Column('receiver_user_id', sa.Integer, sa.ForeignKey('users.id'), nullable=False),
+            sa.Column('post_id', sa.Integer, sa.ForeignKey('posts.id'), nullable=False),
+            sa.Column('shared_at', sa.DateTime, server_default=sa.func.now()),
+        )
+    
+    # Add share_count column to posts if it doesn't exist
+    with op.batch_alter_table('posts') as batch_op:
+        if not hasattr(batch_op, 'share_count'):
+            batch_op.add_column(sa.Column('share_count', sa.Integer, server_default='0'))
     # ### end Alembic commands ###
 
 
@@ -29,4 +44,7 @@ def downgrade():
     op.drop_index(op.f('ix_likes_id'), table_name='likes')
     op.drop_column('likes', 'created_at')
     op.drop_column('likes', 'id')
+    op.drop_table('user_shared_posts')
+    with op.batch_alter_table('posts') as batch_op:
+        batch_op.drop_column('share_count')
     # ### end Alembic commands ###

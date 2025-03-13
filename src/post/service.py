@@ -2,12 +2,12 @@ from sqlalchemy.orm import Session
 import re
 from sqlalchemy import desc
 from fastapi import HTTPException
-from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema
-from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts
+from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts
 from ..models.user import User
 from ..auth.schemas import User as UserSchema
 from ..models.activity import Activity
-
+from sqlalchemy.exc import SQLAlchemyError
 
 # create hashtag from posts' content
 # hey #fun
@@ -230,3 +230,36 @@ async def save_post_svc(db: Session, user_id: int, post_id: int):
 
 async def get_saved_posts_svc(db: Session, user_id: int):
     return db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).all()
+
+async def share_post_svc(db: Session, sender_user_id: int, request: SharePostRequest):
+        """Creates a share record and updates share_count."""
+        try:
+            # Create a share record
+            shared_post = UserSharedPosts(
+                sender_user_id=sender_user_id,
+                receiver_user_id=request.receiver_user_id,
+                post_id=request.post_id
+            )
+            db.add(shared_post)
+
+            # Increment share count of respective post
+            post = db.query(Post).filter(Post.id == request.post_id).first()
+            if post:
+                post.share_count += 1
+            else:
+                raise ValueError("Post not found")
+
+            db.commit()
+            return {"message": "Post shared successfully"}
+        
+        except SQLAlchemyError as e:
+            db.rollback()
+            raise Exception(f"Database error: {str(e)}")
+        
+        except Exception as e:
+            db.rollback()
+            raise Exception(f"Error sharing post: {str(e)}")
+        
+async def get_shared_posts_svc(db: Session, user_id: int):
+        """Fetches posts that a specific user has shared."""
+        return db.query(UserSharedPosts).filter(UserSharedPosts.user_id == user_id).all()
