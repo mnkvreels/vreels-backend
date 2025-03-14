@@ -3,7 +3,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from src.models.user import User
-from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate
+from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest
 from src.database import get_db
 from src.auth.service import (
     get_current_user,
@@ -11,7 +11,10 @@ from src.auth.service import (
     update_user as update_user_svc,
     existing_user,
     create_user as create_user_svc,
-    create_access_token
+    create_access_token,
+    block_user_svc,
+    unblock_user_svc,
+    get_blocked_users_svc
 )
 from ..config import Settings
 
@@ -105,3 +108,56 @@ async def update_profile(user_update: UserUpdate, current_user: User = Depends(g
 #     db.refresh(db_user)
 
 #     return {"message": "Password reset successful. You can now log in with your new password."}
+
+@router.post("/block", status_code=status.HTTP_200_OK)
+async def block_user(
+    request: UserIdRequest, 
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    Block a user by adding an entry to the blocked_users table.
+    """
+    if current_user.id == request.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="You cannot block yourself"
+        )
+    
+    blocked = await block_user_svc(db, current_user.id, request.user_id)
+    if blocked:
+        return {"message": "User successfully blocked"}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is already blocked"
+        )
+
+@router.post("/unblock", status_code=status.HTTP_200_OK)
+async def unblock_user(
+    request: UserIdRequest, 
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    Unblock a user by removing the entry from the blocked_users table.
+    """
+    unblocked = await unblock_user_svc(db, current_user.id, request.user_id)
+    if unblocked:
+        return {"message": "User successfully unblocked"}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not blocked"
+        )
+
+@router.get("/blocked-users", status_code=status.HTTP_200_OK)
+async def get_blocked_users(
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch the list of users blocked by the current user.
+    """
+    blocked_users = await get_blocked_users_svc(db, current_user.id)
+    return jsonable_encoder(blocked_users)

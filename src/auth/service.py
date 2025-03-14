@@ -10,7 +10,7 @@ from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
 
 from src.database import get_db
-from ..models.user import User
+from ..models.user import User, BlockedUsers
 from .schemas import UserCreate, UserUpdate
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
 import random
@@ -222,3 +222,51 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     db.commit()
     db.refresh(db_user)  # Refresh the user instance to get updated data
     return db.query(User).filter(User.id == db_user.id).first()
+
+async def block_user_svc(db, blocker_id, blocked_id):
+    # Ensure both users exist
+    blocker = db.query(User).filter(User.id == blocker_id).first()
+    blocked = db.query(User).filter(User.id == blocked_id).first()
+    
+    if not blocker:
+        raise ValueError(f"Blocker with ID {blocker_id} does not exist")
+    if not blocked:
+        raise ValueError(f"Blocked user with ID {blocked_id} does not exist")
+    
+    # Check if the user is already blocked
+    existing_block = db.query(BlockedUsers).filter(
+        BlockedUsers.blocker_id == blocker_id,
+        BlockedUsers.blocked_id == blocked_id
+    ).first()
+    
+    if existing_block:
+        # Return False to indicate that the user is already blocked
+        return False
+    
+    # Add the new block if no existing block is found
+    new_block = BlockedUsers(blocker_id=blocker_id, blocked_id=blocked_id)
+    db.add(new_block)
+    db.commit()
+    
+    # Return True to indicate the user has been successfully blocked
+    return True
+
+async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
+    existing_block = db.query(BlockedUsers).filter(
+        BlockedUsers.blocker_id == blocker_id,
+        BlockedUsers.blocked_id == blocked_id
+    ).first()
+
+    if not existing_block:
+        return False  # Not blocked
+
+    db.delete(existing_block)
+    db.commit()
+    return True
+
+async def get_blocked_users_svc(db: Session, user_id: int):
+    blocked_users = db.query(User).join(BlockedUsers, User.id == BlockedUsers.blocked_id).filter(
+        BlockedUsers.blocker_id == user_id
+    ).all()
+
+    return blocked_users

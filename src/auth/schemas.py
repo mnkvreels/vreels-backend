@@ -69,3 +69,6 @@ class User(UserBase, UserUpdate):
 #     phone_number: str
 #     otp: str
 #     new_password: str
+
+class UserIdRequest(BaseModel):
+    user_id: int

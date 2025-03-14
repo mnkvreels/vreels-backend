@@ -58,3 +58,10 @@ class User(Base):
 
     # Relationship for received shares (user who receives the shared post)
     shared_posts_received = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.receiver_user_id]", back_populates="receiver", cascade="all, delete")
+
+class BlockedUsers(Base):
+    __tablename__ = "blocked_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
+    blocked_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
