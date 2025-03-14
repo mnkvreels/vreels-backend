@@ -8,10 +8,10 @@ class Follow(Base):
     """
     The Follow class represents a many-to-many relationship between users.
     """
-    __tablename__ = "Follows"
+    __tablename__ = "follows"
 
-    follower_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
-    following_id = Column(Integer, ForeignKey("Users.id"), primary_key=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    following_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     
     # Define relationships to access follower and following users
     following_user = relationship("User", back_populates="followers", foreign_keys=[follower_id])
@@ -19,7 +19,7 @@ class Follow(Base):
 
 
 class User(Base):
-    __tablename__ = "Users"
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     phone_number = Column(BigInteger, unique=True)
@@ -39,10 +39,10 @@ class User(Base):
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
-    
+    likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
     # Many-to-Many Relationships
     liked_posts = relationship("Post", secondary="post_likes", back_populates="liked_by_users")
-    followers = relationship("User", secondary="Follows",
+    followers = relationship("User", secondary="follows",
                              primaryjoin=id == Follow.following_id,
                              secondaryjoin=id == Follow.follower_id,
                              backref="following")
@@ -52,3 +52,16 @@ class User(Base):
 
     followers_count = Column(BigInteger, default=0)
     following_count = Column(BigInteger, default=0)
+    saved_posts = relationship("UserSavedPosts", back_populates="user", cascade="all, delete")
+    # Relationship for sent shares (user who is sharing)
+    shared_posts_sent = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.sender_user_id]", back_populates="sender", cascade="all, delete")
+
+    # Relationship for received shares (user who receives the shared post)
+    shared_posts_received = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.receiver_user_id]", back_populates="receiver", cascade="all, delete")
+
+class BlockedUsers(Base):
+    __tablename__ = "blocked_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
+    blocked_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))

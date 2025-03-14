@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+import re
+from typing import List
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from .schemas import PostCreate, Post
+from .schemas import PostCreate, Post, SavePostRequest, SharePostRequest
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -16,9 +18,15 @@ from .service import (
     liked_users_post_svc,
     comment_on_post_svc,
     get_comments_for_post_svc,
+    save_post_svc,
+    get_saved_posts_svc,
+    share_post_svc,
+    get_shared_posts_svc,
+    get_received_posts_svc
 )
 from ..auth.service import get_current_user, existing_user
 from ..auth.schemas import User
+from ..azure_blob import upload_to_azure_blob
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -34,21 +42,29 @@ class PostRequest(BaseModel):
 class CommentRequest(BaseModel):
     post_id: int
     content: str
+    
+# Regex pattern to check if a string is a valid URL
+URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
 @router.post("/", response_model=Post, status_code=status.HTTP_201_CREATED)
-async def create_post(post: PostCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # verify the token
+async def create_post(content: str = Form(...), file: UploadFile = Form(...), location: str = Form(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     user = current_user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
+    post = PostCreate(content=content, location=location)
+    file_url = None
+    if file:
+        try:
+            file_url = await upload_to_azure_blob(file)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # create post
-    db_post = await create_post_svc(db, post, user.id)
+    # Create the post with the file URL (if any)
+    db_post = await create_post_svc(db, post, current_user.id, file_url)
 
     return db_post
-
 
 @router.get("/user", response_model=list[Post])
 async def get_current_user_posts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -69,7 +85,31 @@ async def get_user_posts(request: UserRequest, db: Session = Depends(get_db)):
 
     return await get_user_posts_svc(db, user.id)
 
-# Not working yet
+@router.post("/savepost", status_code=status.HTTP_201_CREATED)
+async def save_post(request: SavePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await save_post_svc(db, current_user.id, request.post_id)
+
+@router.get("/savedposts", status_code=status.HTTP_200_OK)
+async def get_saved_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    saved_posts = await get_saved_posts_svc(db, current_user.id)
+    return saved_posts
+
+@router.post("/sharepost")
+async def share_post(request: SharePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    sender_user_id = current_user.id
+    try:
+        return await share_post_svc(db, sender_user_id, request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/sharedposts")
+async def get_shared_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await get_shared_posts_svc(db, current_user.id)
+
+@router.get("/receivedposts")
+async def get_received_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await get_received_posts_svc(db, current_user.id)
+
 @router.get("/hashtag/")
 async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends(get_db)):
     return await get_posts_from_hashtag_svc(db, request.hashtag)

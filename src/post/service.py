@@ -1,13 +1,13 @@
 from sqlalchemy.orm import Session
 import re
 from sqlalchemy import desc
-
-from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema
-from ..models.post import Post, Hashtag, post_hashtags, Comment
+from fastapi import HTTPException
+from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts
 from ..models.user import User
 from ..auth.schemas import User as UserSchema
 from ..models.activity import Activity
-
+from sqlalchemy.exc import SQLAlchemyError
 
 # create hashtag from posts' content
 # hey #fun
@@ -27,11 +27,11 @@ async def create_hashtags_svc(db: Session, post: Post):
 
 
 # create post
-async def create_post_svc(db: Session, post: PostCreate, user_id: int):
+async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url: str):
     # check if user_id is valid
     db_post = Post(
         content=post.content,
-        media=post.media,
+        media=file_url,
         location=post.location,
         author_id=user_id,
     )
@@ -210,3 +210,60 @@ async def get_comments_for_post_svc(db: Session, post_id: int):
 
     comments = db.query(Comment).filter(Comment.post_id == post_id).all()
     return comments
+
+async def save_post_svc(db: Session, user_id: int, post_id: int):
+    # Check if post is already saved by user
+    existing_entry = db.query(UserSavedPosts).filter(
+        UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post_id
+    ).first()
+
+    if existing_entry:
+        raise HTTPException(status_code=400, detail="Post already saved.")
+
+    # Create a new entry in user_saved_posts table
+    saved_post = UserSavedPosts(user_id=user_id, saved_post_id=post_id)
+    db.add(saved_post)
+    db.commit()
+    db.refresh(saved_post)
+
+    return {"message": "Post saved successfully"}
+
+async def get_saved_posts_svc(db: Session, user_id: int):
+    return db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).all()
+
+async def share_post_svc(db: Session, sender_user_id: int, request: SharePostRequest):
+        """Creates a share record and updates share_count."""
+        try:
+            # Create a share record
+            shared_post = UserSharedPosts(
+                sender_user_id=sender_user_id,
+                receiver_user_id=request.receiver_user_id,
+                post_id=request.post_id
+            )
+            db.add(shared_post)
+
+            # Increment share count of respective post
+            post = db.query(Post).filter(Post.id == request.post_id).first()
+            if post:
+                post.share_count += 1
+            else:
+                raise ValueError("Post not found")
+
+            db.commit()
+            return {"message": "Post shared successfully"}
+        
+        except SQLAlchemyError as e:
+            db.rollback()
+            raise Exception(f"Database error: {str(e)}")
+        
+        except Exception as e:
+            db.rollback()
+            raise Exception(f"Error sharing post: {str(e)}")
+        
+async def get_shared_posts_svc(db: Session, user_id: int):
+        """Fetches posts that a specific user has shared."""
+        return db.query(UserSharedPosts).filter(UserSharedPosts.sender_user_id == user_id).all()
+    
+async def get_received_posts_svc(db: Session, user_id: int):
+        """Fetches posts that a specific user has shared."""
+        return db.query(UserSharedPosts).filter(UserSharedPosts.receiver_user_id == user_id).all()
