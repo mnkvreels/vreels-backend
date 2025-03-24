@@ -161,3 +161,11 @@ async def get_blocked_users(
     """
     blocked_users = await get_blocked_users_svc(db, current_user.id)
     return jsonable_encoder(blocked_users)
+
+@router.post("/logout")
+async def logout(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = current_user
+    user.device_token = None
+    db.add(user)
+    db.commit()
+    return {"message": "Logged out successfully!"}

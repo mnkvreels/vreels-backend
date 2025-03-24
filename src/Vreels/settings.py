@@ -44,7 +44,13 @@ ALLOWED_HOSTS = [
     'www.vreels.azurewebsites.net',  # Optional, for subdomains
 ]
 
-
+# Azure notifications
+NOTIFICATION_HUB_NAME = "VreelsNotificationHub"
+NOTIFICATION_HUB_CONNECTION_STRING = "Endpoint=sb://VreelsNotificationNamespace.servicebus.windows.net/;SharedAccessKeyName=DefaultFullSharedAccessSignature;SharedAccessKey=iRo5EDWXy5AtjZHhSApCVR3licfJOvvB2psF1IdoUKw="
+AZURE_NAMESPACE = "VreelsNotificationNamespace"  # Example: "yourappnamespace"
+AZURE_ACCESS_KEY = "iRo5EDWXy5AtjZHhSApCVR3licfJOvvB2psF1IdoUKw="  # From Access Policies
+AZURE_HUB_NAME = "VreelsNotificationHub"  # Notification Hub name
+    
 # Application definition
 
 INSTALLED_APPS = [

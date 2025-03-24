@@ -17,7 +17,7 @@ import random
 import string
 import bcrypt
 from ..config import Settings
-
+from ..notification_service import send_push_notification
 # Password hashing context using bcrypt
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -165,6 +165,12 @@ async def get_user_from_user_id(db: Session, user_id: int):
     """
     return db.query(User).filter(User.id == user_id).first()
 
+# Function to get a user by their user ID
+async def get_user_by_username(db: Session, username: str):
+    """
+    Fetch a user from the database using their user ID.
+    """
+    return db.query(User).filter(User.username == username).first()
 
 # Function to create a new user in the database
 async def create_user(db: Session, user: UserCreate):
@@ -270,3 +276,13 @@ async def get_blocked_users_svc(db: Session, user_id: int):
     ).all()
 
     return blocked_users
+
+async def send_notification_to_user(db, user_id: int, title: str, message: str):
+    user = await get_user_from_user_id(db, user_id)
+    if user and user.device_token:
+        await send_push_notification(
+            device_token=user.device_token,
+            platform=user.platform,
+            title=title,
+            message=message
+        )
