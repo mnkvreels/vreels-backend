@@ -72,3 +72,7 @@ class User(UserBase, UserUpdate):
 
 class UserIdRequest(BaseModel):
     user_id: int
+    
+class DeviceTokenRequest(BaseModel):
+    device_token: str
+    platform: str  # iOS or Android
