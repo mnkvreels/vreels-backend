@@ -5,7 +5,6 @@ import hashlib
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
-from .Vreels.settings import Settings
 
 
 def generate_sas_token(url: str, key_name: str, key: str) -> str:
@@ -31,10 +30,10 @@ async def send_push_notification(device_token: str, platform: str, title: str, m
         title (str): Notification title.
         message (str): Notification message.
     """
-    hub_name = Settings.AZURE_HUB_NAME
-    namespace = Settings.AZURE_NAMESPACE
+    hub_name = "VreelsNotificationHub"
+    namespace = "VreelsNotificationNamespace"
     key_name = "DefaultFullSharedAccessSignature"
-    key = Settings.AZURE_ACCESS_KEY
+    key = "iRo5EDWXy5AtjZHhSApCVR3licfJOvvB2psF1IdoUKw="
 
     # Azure API endpoint
     url = f"https://{namespace}.servicebus.windows.net/{hub_name}/messages/{device_token}?api-version=2015-01"
