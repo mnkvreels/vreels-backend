@@ -5,11 +5,7 @@ from sqlalchemy.orm import Session
 from src.models.user import User
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest
 from src.database import get_db
-import random
-import requests
-from datetime import datetime, timedelta
-from src.models.user import OTP
-import json
+
 
 from src.auth.service import (
     get_current_user,
@@ -190,5 +186,3 @@ async def logout(db: Session = Depends(get_db), current_user: User = Depends(get
     db.add(user)
     db.commit()
     return {"message": "Logged out successfully!"}
-
-
