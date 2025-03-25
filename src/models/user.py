@@ -70,11 +70,4 @@ class BlockedUsers(Base):
     blocker_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
     blocked_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
 
-    # Database Model for OTP
-class OTP(Base):
-    __tablename__ = "otp"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True)
-    otp = Column(String(10),nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))  
+  
