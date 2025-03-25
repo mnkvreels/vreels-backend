@@ -69,5 +69,4 @@ class BlockedUsers(Base):
     id = Column(Integer, primary_key=True, index=True)
     blocker_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
     blocked_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
-
-  
+ 
