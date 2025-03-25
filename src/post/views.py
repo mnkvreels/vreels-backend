@@ -24,9 +24,11 @@ from .service import (
     get_shared_posts_svc,
     get_received_posts_svc
 )
-from ..auth.service import get_current_user, existing_user
+from ..profile.service import get_followers_svc
+from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user
 from ..auth.schemas import User
 from ..azure_blob import upload_to_azure_blob
+from ..notification_service import send_push_notification
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -57,13 +59,29 @@ async def create_post(content: str = Form(...), file: UploadFile = Form(...), lo
     file_url = None
     if file:
         try:
-            file_url = await upload_to_azure_blob(file)
+            file_url = await upload_to_azure_blob(file,user.username)
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Create the post with the file URL (if any)
     db_post = await create_post_svc(db, post, current_user.id, file_url)
 
+    # Fetch followers of the user
+    followers = await get_followers_svc(db, current_user.id)
+
+    # Send notifications to followers
+    for follower in followers.db_followers:
+        device_token = follower.device_token
+        platform = follower.platform
+
+        # Send push notification
+        await send_notification_to_user(
+            device_token=device_token,
+            platform=platform,
+            title=f"New Post from {current_user.username}",
+            message=f"{current_user.username} has posted a new update! Check it out!"
+        )
+    
     return db_post
 
 @router.get("/user", response_model=list[Post])
@@ -98,7 +116,15 @@ async def get_saved_posts(db: Session = Depends(get_db), current_user=Depends(ge
 async def share_post(request: SharePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     sender_user_id = current_user.id
     try:
-        return await share_post_svc(db, sender_user_id, request)
+        res = await share_post_svc(db, sender_user_id, request)
+        
+        # Send notification to the receiver
+        await send_notification_to_user(
+            user_id=request.receiver_user_id,
+            title="🔁 New Post Shared!",
+            message=f"{current_user.username} shared a post with you."
+        )
+        return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -147,7 +173,14 @@ async def like_post(request: PostRequest, db: Session = Depends(get_db), current
     res, detail = await like_post_svc(db, request.post_id, current_user.username)
     if res == False:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-
+    # Get the post owner and notify them
+    post = await get_post_from_post_id_svc(db, request.post_id)
+    if post.author_id != current_user.id:
+        await send_notification_to_user(
+            user_id=post.author_id,
+            title="❤️ New Like on Your Post!",
+            message=f"{current_user.username} liked your post."
+        )
 
 @router.post("/unlike", status_code=status.HTTP_204_NO_CONTENT)
 async def unlike_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -184,6 +217,15 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
     res, detail = await comment_on_post_svc(db, request.post_id, user.id, request.content)
     if not res:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    
+    # Get the post owner and notify them
+    post = await get_post_from_post_id_svc(db, request.post_id)
+    if post.author_id != current_user.id:
+        await send_notification_to_user(
+            user_id=post.author_id,
+            title="💬 New Comment on Your Post!",
+            message=f"{current_user.username} commented: {request.content}"
+        )
 
     return {"message": "Comment added successfully"}
 

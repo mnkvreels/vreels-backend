@@ -35,6 +35,10 @@ class User(Base):
     bio = Column(String(255))
     email = Column(String(255), unique=True)
     location = Column(String(255))
+    
+    # New fields for push notifications
+    device_token = Column(String, nullable=True)  # Device token for push notifications
+    platform = Column(String(50), nullable=True)  # Platform: iOS or Android
 
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")

@@ -67,10 +67,6 @@ class Post(Base):
     share_count = Column(Integer, default=0)
     saved_by_users = relationship("UserSavedPosts", back_populates="post", cascade="all, delete")
     shared_by_users = relationship("UserSharedPosts", back_populates="post", cascade="all, delete")
-    
-    def update_likes_and_comments_count(self, db_session):
-        self.likes_count = db_session.query(Like).filter(Like.post_id == self.id).count()
-        self.comments_count = db_session.query(Comment).filter(Comment.post_id == self.id).count()
 
 # Hashtag Model
 class Hashtag(Base):

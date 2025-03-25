@@ -3,7 +3,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from src.models.user import User
-from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest
+from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest
 from src.database import get_db
 from src.auth.service import (
     get_current_user,
@@ -49,6 +49,21 @@ async def login(user: UserCreate, db: Session = Depends(get_db)):
     access_token = await create_access_token(db_user.username, db_user.id)
     return {"access_token": access_token, "token_type": "bearer", "user_id": db_user.id}
 
+@router.post("/update-device-token")
+async def update_device_token(request: DeviceTokenRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = current_user
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    # Update device token and platform
+    user.device_token = request.device_token
+    user.platform = request.platform.lower()
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {"message": "Device token updated successfully!"}
 
 @router.get("/profile", status_code=status.HTTP_200_OK, response_model=UserSchema)
 async def profile(current_user: User = Depends(get_current_user)):
@@ -161,3 +176,11 @@ async def get_blocked_users(
     """
     blocked_users = await get_blocked_users_svc(db, current_user.id)
     return jsonable_encoder(blocked_users)
+
+@router.post("/logout")
+async def logout(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = current_user
+    user.device_token = None
+    db.add(user)
+    db.commit()
+    return {"message": "Logged out successfully!"}

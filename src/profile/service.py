@@ -87,7 +87,7 @@ async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
             }
         )
 
-    return FollowersList(followers=followers)
+    return {"Followers": FollowersList(followers=followers) , "db_followers": db_followers }
 
 
 # get following

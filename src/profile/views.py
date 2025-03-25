@@ -11,8 +11,9 @@ from .service import (
     check_follow_svc,
     existing_user,
 )
-from ..auth.service import get_current_user
+from ..auth.service import get_current_user, get_user_by_username
 from ..models import User
+from ..notification_service import send_push_notification
 
 class UserRequest(BaseModel):
     username: str
@@ -42,6 +43,17 @@ async def follow(request: UserRequest, db: Session = Depends(get_db), current_us
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="could not follow"
         )
+    elif res:
+        followed_user = await get_user_by_username(db, request.username)
+        
+        # Send notification to followed user
+        await send_push_notification(
+            device_token=followed_user.device_token,
+            platform=followed_user.platform,
+            title="👥 New Follower!",
+            message=f"{current_user.username} is now following you."
+        )
+        return {"message": "Followed successfully!"}
 
 
 @router.post("/unfollow", status_code=status.HTTP_204_NO_CONTENT)

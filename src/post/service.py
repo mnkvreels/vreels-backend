@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 import re
-from sqlalchemy import desc
+from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
-from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like
 from ..models.user import User
 from ..auth.schemas import User as UserSchema
 from ..models.activity import Activity
@@ -101,9 +101,27 @@ async def get_random_posts_svc(
 
 # get post by post id
 async def get_post_from_post_id_svc(db: Session, post_id: int) -> PostSchema:
-    post = db.query(Post).filter(Post.id == post_id).first()
-    if post:
-        post.update_likes_and_comments_count(db)  # Update likes and comments count for the post
+    post_query = (
+        db.query(
+            Post,
+            func.count(Like.id).label("likes_count"),
+            func.count(Comment.id).label("comments_count")
+        )
+        .outerjoin(Like, Like.post_id == Post.id)
+        .outerjoin(Comment, Comment.post_id == Post.id)
+        .filter(Post.id == post_id)
+        .group_by(Post.id)
+    ).first()
+
+    if not post_query:
+        return None
+
+    post, likes_count, comments_count = post_query
+
+    # Update likes and comments count in one go
+    post.likes_count = likes_count
+    post.comments_count = comments_count
+
     return post
 
 
