@@ -59,7 +59,7 @@ async def create_post(content: str = Form(...), file: UploadFile = Form(...), lo
     file_url = None
     if file:
         try:
-            file_url = await upload_to_azure_blob(file)
+            file_url = await upload_to_azure_blob(file,user.username)
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

@@ -5,8 +5,8 @@ import uuid
 
 # Azure Blob Storage Configuration
 AZURE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName=vreelsstorage;AccountKey=YkdFdR/UTuWKJnB4nmYJPV+NaqgsP9Vy3LVHIJ2R6m10jWM4v2a141Fh0HA+95BNs5PH6k/OTO2X+AStlUmb6Q==;EndpointSuffix=core.windows.net"
-AZURE_IMAGE_CONTAINER="images"
-AZURE_VIDEO_CONTAINER="videos"
+AZURE_IMAGE_CONTAINER = "images"
+AZURE_VIDEO_CONTAINER = "videos"
 
 # Initialize BlobServiceClient
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
@@ -15,7 +15,7 @@ blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"}
 
-async def upload_to_azure_blob(file: UploadFile) -> str:
+async def upload_to_azure_blob(file: UploadFile, username: str) -> str:
     try:
         # Extract file extension
         file_extension = file.filename.split(".")[-1].lower()
@@ -30,10 +30,10 @@ async def upload_to_azure_blob(file: UploadFile) -> str:
         # Get the container client
         container_client = blob_service_client.get_container_client(container_name)
 
-        # Generate a unique file name
-        blob_name = f"uploads/{uuid.uuid4()}.{file_extension}"
+        # Generate a unique file name and path with username
+        blob_name = f"{username}/{uuid.uuid4()}.{file_extension}"
 
-        # Upload file
+        # Upload file to the correct container
         blob_client = container_client.get_blob_client(blob_name)
         blob_client.upload_blob(await file.read(), overwrite=True)
 
