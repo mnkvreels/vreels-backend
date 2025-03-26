@@ -27,7 +27,7 @@ from .service import (
     get_received_posts_svc
 )
 from ..profile.service import get_followers_svc
-from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user
+from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username
 from ..auth.schemas import User
 from ..azure_blob import upload_to_azure_blob
 from ..notification_service import send_push_notification
@@ -72,17 +72,23 @@ async def create_post(content: str = Form(...), file: UploadFile = Form(...), lo
     followers = await get_followers_svc(db, current_user.id)
 
     # Send notifications to followers
-    for follower in followers.db_followers:
-        device_token = follower.device_token
-        platform = follower.platform
+    # for follow in followers:
+    #     # follower_username = follow['username']
+    #     follower_user = await get_user_by_username(db, follow.username)
+    #     device_token = follower_user.device_token
+    #     platform = follower_user.platform
 
-        # Send push notification
-        await send_push_notification(
-            device_token=device_token,
-            platform=platform,
-            title=f"New Post from {current_user.username}",
-            message=f"{current_user.username} has posted a new update! Check it out!"
-        )
+    #     # Send push notification
+    #     try:
+    #         await send_push_notification(
+    #         device_token=device_token,
+    #         platform=platform,
+    #         title=f"New Post from {current_user.username}",
+    #         message=f"{current_user.username} has posted a new update! Check it out!"
+    #     )
+    #     except Exception as e:
+    #         # Log the error but don't raise it to ensure the post share is still processed
+    #         print(f"Failed to send notification: {str(e)}")
     
     return db_post
 
@@ -124,12 +130,17 @@ async def share_post(request: SharePostRequest, db: Session = Depends(get_db), c
     try:
         res = await share_post_svc(db, sender_user_id, request)
         
-        # Send notification to the receiver
-        await send_notification_to_user(db,
-            user_id=request.receiver_user_id,
-            title="🔁 New Post Shared!",
-            message=f"{current_user.username} shared a post with you."
-        )
+        # Send notification to the receiver (with handling for invalid token)
+        try:
+            await send_notification_to_user(db,
+                user_id=request.receiver_user_id,
+                title="🔁 New Post Shared!",
+                message=f"{current_user.username} shared a post with you."
+            )
+        except Exception as e:
+            # Log the error but don't raise it to ensure the post share is still processed
+            print(f"Failed to send notification: {str(e)}")
+
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

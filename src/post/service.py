@@ -297,7 +297,7 @@ async def share_post_svc(db: Session, sender_user_id: int, request: SharePostReq
             if post:
                 post.share_count += 1
             else:
-                raise ValueError("Post not found")
+                raise HTTPException(status_code=404, detail="Post not found")
 
             db.commit()
             return {"message": "Post shared successfully"}

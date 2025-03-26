@@ -69,7 +69,7 @@ async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
 
     try:
         db_followers = (
-            db.query(Follow)
+            db.query(Follow)  # Get both Follow and User objects
             .filter(Follow.following_id == user_id)
             .join(User, User.id == Follow.follower_id)
             .all()
@@ -87,8 +87,7 @@ async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
             }
         )
 
-    return {"Followers": FollowersList(followers=followers) , "db_followers": db_followers }
-
+    return FollowersList(followers=followers)
 
 # get following
 async def get_following_svc(db: Session, user_id: int) -> list[FollowingList]:
