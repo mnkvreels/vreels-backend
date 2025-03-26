@@ -77,7 +77,7 @@ async def create_post(content: str = Form(...), file: UploadFile = Form(...), lo
         platform = follower.platform
 
         # Send push notification
-        await send_notification_to_user(
+        await send_push_notification(
             device_token=device_token,
             platform=platform,
             title=f"New Post from {current_user.username}",

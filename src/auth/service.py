@@ -277,7 +277,7 @@ async def get_blocked_users_svc(db: Session, user_id: int):
 
     return blocked_users
 
-async def send_notification_to_user(db, user_id: int, title: str, message: str):
+async def send_notification_to_user(user_id: int, title: str, message: str, db: Session = Depends(get_db)):
     user = await get_user_from_user_id(db, user_id)
     if user and user.device_token:
         await send_push_notification(
