@@ -125,7 +125,7 @@ async def share_post(request: SharePostRequest, db: Session = Depends(get_db), c
         res = await share_post_svc(db, sender_user_id, request)
         
         # Send notification to the receiver
-        await send_notification_to_user(
+        await send_notification_to_user(db,
             user_id=request.receiver_user_id,
             title="🔁 New Post Shared!",
             message=f"{current_user.username} shared a post with you."
@@ -201,7 +201,7 @@ async def like_post(request: PostRequest, db: Session = Depends(get_db), current
     # Get the post owner and notify them
     post = await get_post_from_post_id_svc(db, request.post_id)
     if post.author_id != current_user.id:
-        await send_notification_to_user(
+        await send_notification_to_user(db,
             user_id=post.author_id,
             title="❤️ New Like on Your Post!",
             message=f"{current_user.username} liked your post."
@@ -246,7 +246,7 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
     # Get the post owner and notify them
     post = await get_post_from_post_id_svc(db, request.post_id)
     if post.author_id != current_user.id:
-        await send_notification_to_user(
+        await send_notification_to_user(db,
             user_id=post.author_id,
             title="💬 New Comment on Your Post!",
             message=f"{current_user.username} commented: {request.content}"
