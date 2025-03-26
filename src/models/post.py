@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table
+from requests import Session
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone
 from src.database import Base
@@ -67,6 +68,14 @@ class Post(Base):
     share_count = Column(Integer, default=0)
     saved_by_users = relationship("UserSavedPosts", back_populates="post", cascade="all, delete")
     shared_by_users = relationship("UserSharedPosts", back_populates="post", cascade="all, delete")
+    def update_likes_and_comments_count(self, db: Session):
+        """Update likes_count and comments_count for the post."""
+        self.likes_count = (
+            db.query(func.count(Like.id)).filter(Like.post_id == self.id).scalar() or 0
+        )
+        self.comments_count = (
+            db.query(func.count(Comment.id)).filter(Comment.post_id == self.id).scalar() or 0
+        )
 
 # Hashtag Model
 class Hashtag(Base):

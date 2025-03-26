@@ -19,8 +19,10 @@ from .service import (
     comment_on_post_svc,
     get_comments_for_post_svc,
     save_post_svc,
+    unsave_post_svc,
     get_saved_posts_svc,
     share_post_svc,
+    unsend_share_svc,
     get_shared_posts_svc,
     get_received_posts_svc
 )
@@ -107,6 +109,10 @@ async def get_user_posts(request: UserRequest, db: Session = Depends(get_db)):
 async def save_post(request: SavePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return await save_post_svc(db, current_user.id, request.post_id)
 
+@router.post("/unsavepost", status_code=status.HTTP_201_CREATED)
+async def unsave_post(request: SavePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    return await unsave_post_svc(db, current_user.id, request.post_id)
+
 @router.get("/savedposts", status_code=status.HTTP_200_OK)
 async def get_saved_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     saved_posts = await get_saved_posts_svc(db, current_user.id)
@@ -127,6 +133,25 @@ async def share_post(request: SharePostRequest, db: Session = Depends(get_db), c
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/undoshare", status_code=status.HTTP_200_OK)
+async def undo_share(
+    request: SharePostRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    try:
+        res = await unsend_share_svc(
+            db, 
+            sender_user_id=current_user.id, 
+            post_id=request.post_id, 
+            receiver_user_id=request.receiver_user_id
+        )
+        return res
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sharedposts")
 async def get_shared_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):

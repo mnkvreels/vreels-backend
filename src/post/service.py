@@ -101,24 +101,40 @@ async def get_random_posts_svc(
 
 # get post by post id
 async def get_post_from_post_id_svc(db: Session, post_id: int) -> PostSchema:
+    # Subquery for likes count
+    likes_count_subquery = (
+        db.query(func.count(Like.id))
+        .filter(Like.post_id == Post.id)
+        .correlate(Post)
+        .scalar_subquery()
+    )
+
+    # Subquery for comments count
+    comments_count_subquery = (
+        db.query(func.count(Comment.id))
+        .filter(Comment.post_id == Post.id)
+        .correlate(Post)
+        .scalar_subquery()
+    )
+
+    # Main query to get the post with counts
     post_query = (
         db.query(
             Post,
-            func.count(Like.id).label("likes_count"),
-            func.count(Comment.id).label("comments_count")
+            likes_count_subquery.label("likes_count"),
+            comments_count_subquery.label("comments_count"),
         )
-        .outerjoin(Like, Like.post_id == Post.id)
-        .outerjoin(Comment, Comment.post_id == Post.id)
         .filter(Post.id == post_id)
-        .group_by(Post.id)
-    ).first()
+        .first()
+    )
 
     if not post_query:
         return None
 
+    # Unpack results
     post, likes_count, comments_count = post_query
 
-    # Update likes and comments count in one go
+    # Update likes and comments count
     post.likes_count = likes_count
     post.comments_count = comments_count
 
@@ -246,6 +262,22 @@ async def save_post_svc(db: Session, user_id: int, post_id: int):
 
     return {"message": "Post saved successfully"}
 
+async def unsave_post_svc(db: Session, user_id: int, post_id: int):
+    # Check if the post is saved by the user
+    saved_post = db.query(UserSavedPosts).filter(
+        UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post_id
+    ).first()
+
+    # If no saved post found, raise an error
+    if not saved_post:
+        raise HTTPException(status_code=404, detail="Post not found in saved list.")
+
+    # Delete the saved post entry
+    db.delete(saved_post)
+    db.commit()
+
+    return {"message": "Post unsaved successfully"}
+
 async def get_saved_posts_svc(db: Session, user_id: int):
     return db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).all()
 
@@ -277,7 +309,31 @@ async def share_post_svc(db: Session, sender_user_id: int, request: SharePostReq
         except Exception as e:
             db.rollback()
             raise Exception(f"Error sharing post: {str(e)}")
-        
+
+async def unsend_share_svc(db: Session, sender_user_id: int, post_id: int, receiver_user_id: int):
+    """Removes a share record and updates share_count."""
+    # Find the shared post entry
+    shared_post = db.query(UserSharedPosts).filter(
+        UserSharedPosts.sender_user_id == sender_user_id,
+        UserSharedPosts.post_id == post_id,
+        UserSharedPosts.receiver_user_id == receiver_user_id
+    ).first()
+
+    if not shared_post:
+        raise HTTPException(status_code=404, detail="Shared post not found.")
+
+    # Delete the share record
+    db.delete(shared_post)
+
+    # Decrease share count of the post
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if post and post.share_count > 0:
+        post.share_count -= 1
+
+    db.commit()
+
+    return {"message": "Share undone successfully."}
+
 async def get_shared_posts_svc(db: Session, user_id: int):
         """Fetches posts that a specific user has shared."""
         return db.query(UserSharedPosts).filter(UserSharedPosts.sender_user_id == user_id).all()
