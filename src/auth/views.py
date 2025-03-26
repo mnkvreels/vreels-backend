@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Form
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from src.models.user import User
+from src.models.user import User, OTP
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest
 from src.database import get_db
-
+from datetime import timedelta, datetime, timezone
 
 from src.auth.service import (
     get_current_user,
@@ -16,7 +16,12 @@ from src.auth.service import (
     create_access_token,
     block_user_svc,
     unblock_user_svc,
-    get_blocked_users_svc
+    get_blocked_users_svc,
+    generate_otp,
+    authenticateMobile,
+    authenticateUserID,
+    otp_function,
+    send_sms
 )
 from ..config import Settings
 
@@ -186,3 +191,102 @@ async def logout(db: Session = Depends(get_db), current_user: User = Depends(get
     db.add(user)
     db.commit()
     return {"message": "Logged out successfully!"}
+
+# send otp endpoint
+@router.post("/send-otp", status_code=status.HTTP_200_OK)
+async def send_otp(user: UserUpdate, db: Session = Depends(get_db)):
+    # Check if user exists in the database (based on phone number in 'users' table)
+    db_user = await authenticateMobile(db, user.phone_number)
+    
+    if db_user:
+        # If user exists, generate OTP for the existing user and send it
+        otp = await otp_function(db, db_user.id, user.phone_number)
+        sms_status = await send_sms(user.phone_number, otp)
+        
+        if sms_status:
+            return {"message": "OTP sent successfully", "user_id": db_user.id}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP",
+            )
+    else:
+        # If user does not exist, insert user mobile number into the 'users' table
+        new_user = User(phone_number=user.phone_number)
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        # Generate OTP and send SMS
+        otp = await otp_function(db, db_user.id, user.phone_number)
+        sms_status = await send_sms(user.phone_number, otp)
+        
+        if sms_status:
+            return {"message": "OTP sent successfully", "user_id": db_user.id}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP",
+            )
+
+# verify otp endpoint
+@router.post("/verify-otp", status_code=status.HTTP_200_OK)
+async def verify_otp(user_id: int = Form(...), otp: str = Form(...), db: Session = Depends(get_db)):
+    otp_record = db.query(OTP).filter(OTP.user_id == user_id, OTP.otp == otp).order_by(OTP.created_at.desc()).first()
+
+    # Check if OTP exists
+    if not otp_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP",
+        )
+
+    # Handle naive datetime properly
+    if otp_record.created_at.tzinfo is None:
+        created_at_aware = otp_record.created_at.replace(tzinfo=timezone.utc)
+    else:
+        created_at_aware = otp_record.created_at
+
+    # Check OTP expiry
+    if datetime.now(timezone.utc) > created_at_aware + timedelta(minutes=5):
+        # Optionally, you can delete expired OTPs here, or leave them in the DB
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired",
+        )
+    
+    db_user = await authenticateUserID(db, user_id)
+    if db_user.username and db_user.username != "":
+        # Generate access token if username exists and is not empty
+        access_token = await create_access_token(db_user.username, user_id)
+        return {
+            "message": "OTP verified successfully",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": user_id
+            }
+    else:
+        # Handle case when username is missing or empty
+         return {
+            "message": "OTP verified successfully",
+            "user": db_user,
+            "user_id": user_id
+            }
+    
+#  update profile first time login
+@router.put("/user_profile")
+async def update_profile(user_update: UserUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    updated_user = await update_user_svc(db, current_user, user_update)
+    if updated_user.username and updated_user.username != "":
+        access_token = await create_access_token(updated_user.username, updated_user.id)
+        return {
+            "message": "Profile updated successfully",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": updated_user.id
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username is missing or invalid"
+        )

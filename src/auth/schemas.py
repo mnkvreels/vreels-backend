@@ -39,6 +39,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None # User's email
     location: Optional[str] = None  # User's location (optional)
     profile_pic: Optional[str] = None  # Link to user's profile picture (optional)
+    phone_number: Optional[int]
 
 
 # Full user profile including the created date and ID, combining UserBase and UserUpdate
