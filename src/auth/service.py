@@ -1,6 +1,7 @@
 from os import stat
 from jwt import PyJWKClient
 import requests
+import json
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import BigInteger, and_
 from sqlalchemy.orm import Session
@@ -8,9 +9,8 @@ from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
-
 from src.database import get_db
-from ..models.user import User, BlockedUsers
+from ..models.user import User, BlockedUsers, OTP
 from .schemas import UserCreate, UserUpdate
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
 import random
@@ -286,3 +286,63 @@ async def send_notification_to_user(db: Session, user_id: int, title: str, messa
             title=title,
             message=message
         )
+
+# OTP Generation function
+async def generate_otp(otp_length=6):
+    base_number = 10 ** (otp_length - 1)
+    number = random.randint(base_number, base_number * 10 - 1)
+    return str(number)
+
+# Send SMS function using the SMS API (SMSCountry in this case)
+async def send_sms(mobile, otp):
+    if str(mobile).startswith("91"):
+        url = "https://restapi.smscountry.com/v0.1/Accounts/mQWTheACJyLM60UPeREV/SMSes/"
+        headers = {
+            'Authorization': 'Basic bVFXVGhlQUNKeUxNNjBVUGVSRVY6SUxhc2FZc0hXcVVVSklvSHBWbXNkYkNPNjFrMVBvdDQyeWNjbmRDWQ==',
+            'Content-Type': 'application/json',
+        }
+        data = {
+            "Text": f"Hello your log in OTP is {otp},please do not share with anyone.-Vreels",
+            "Number": mobile,
+            "SenderId": "",
+            "DRNotifyUrl": "https://www.domainname.com/notifyurl",
+            "DRNotifyHttpMethod": "POST",
+            "Tool": "API"
+        }
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        if response.status_code == 200:
+            return True
+        else:
+            return False
+    else:
+         return True
+
+# OTP function to store OTP in the database
+async def otp_function(db, user_id, phone_number):
+    if str(phone_number).startswith("91"):
+        otp = generate_otp(6)
+    else:
+        otp = "123456"
+
+    otp_details = OTP(
+        user_id=user_id,
+        otp=otp,
+        created_at=datetime.now(timezone.utc),
+    )
+    
+    db.add(otp_details)
+    db.commit()
+    db.refresh(otp_details)
+    
+    return otp
+
+# User Authentication (checking if user exists by phone number in the users table)
+async def authenticateMobile(db, phone_number):
+    # Querying the 'users' table to check if the phone number exists
+    user = db.query(User).filter(User.phone_number == phone_number).first()
+    return user
+
+async def authenticateUserID(db, user_id):
+    # Querying the 'users' table to check if the phone number exists
+    user = db.query(User).filter(User.id == user_id).first()
+    return user
