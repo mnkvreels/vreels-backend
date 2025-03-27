@@ -48,11 +48,13 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
 
 
 # get user's posts
-async def get_user_posts_svc(db: Session, user_id: int) -> list[PostSchema]:
+async def get_user_posts_svc(db: Session, user_id: int, page: int = 1, limit: int = 6) -> list[PostSchema]:
+    offset = (page - 1) * limit
     posts = (
         db.query(Post)
         .filter(Post.author_id == user_id)
         .order_by(desc(Post.created_at))
+        .offset(offset).limit(limit)
         .all()
     )
     for post in posts:

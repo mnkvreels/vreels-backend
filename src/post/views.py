@@ -93,19 +93,19 @@ async def create_post(content: str = Form(...), file: UploadFile = Form(...), lo
     return db_post
 
 @router.get("/user", response_model=list[Post])
-async def get_current_user_posts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_current_user_posts(page: int, limit: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # verify the token
     user = current_user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-
-    return await get_user_posts_svc(db, user.id)
+    posts = await get_user_posts_svc(db, user.id, page, limit)
+    return posts
 
 
 @router.get("/userposts", response_model=list[Post])
-async def get_user_posts(request: UserRequest, db: Session = Depends(get_db)):
+async def get_user_posts_by_username(request: UserRequest, db: Session = Depends(get_db)):
     # verify token
     user = await existing_user(db, request.username)
 
