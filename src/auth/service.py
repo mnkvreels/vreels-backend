@@ -310,7 +310,7 @@ async def send_sms(mobile, otp):
             "Tool": "API"
         }
         response = requests.post(url, headers=headers, data=json.dumps(data))
-        if response.status_code == 200:
+        if response.status_code in [200, 202]:
             return True
         else:
             return False
@@ -320,7 +320,7 @@ async def send_sms(mobile, otp):
 # OTP function to store OTP in the database
 async def otp_function(db, user_id, phone_number):
     if str(phone_number).startswith("91"):
-        otp = generate_otp(6)
+        otp = await generate_otp(6)
     else:
         otp = "123456"
 

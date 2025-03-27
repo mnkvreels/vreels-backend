@@ -200,8 +200,8 @@ async def send_otp(user: UserUpdate, db: Session = Depends(get_db)):
     
     if db_user:
         # If user exists, generate OTP for the existing user and send it
-        otp = await otp_function(db, db_user.id, user.phone_number)
-        sms_status = await send_sms(user.phone_number, otp)
+        otp_value = await otp_function(db, db_user.id, user.phone_number)
+        sms_status = await send_sms(user.phone_number, otp_value)
         
         if sms_status:
             return {"message": "OTP sent successfully", "user_id": db_user.id}
@@ -218,8 +218,8 @@ async def send_otp(user: UserUpdate, db: Session = Depends(get_db)):
         db.refresh(new_user)
         
         # Generate OTP and send SMS
-        otp = await otp_function(db, db_user.id, user.phone_number)
-        sms_status = await send_sms(user.phone_number, otp)
+        otp_value = await otp_function(db, db_user.id, user.phone_number)
+        sms_status = await send_sms(user.phone_number, otp_value)
         
         if sms_status:
             return {"message": "OTP sent successfully", "user_id": db_user.id}
