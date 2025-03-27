@@ -21,7 +21,8 @@ from src.auth.service import (
     authenticateMobile,
     authenticateUserID,
     otp_function,
-    send_sms
+    send_sms,
+    delete_account_svc
 )
 from ..config import Settings
 
@@ -211,23 +212,10 @@ async def send_otp(user: UserUpdate, db: Session = Depends(get_db)):
                 detail="Failed to send OTP",
             )
     else:
-        # If user does not exist, insert user mobile number into the 'users' table
-        new_user = User(phone_number=user.phone_number)
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-        
-        # Generate OTP and send SMS
-        otp_value = await otp_function(db, db_user.id, user.phone_number)
-        sms_status = await send_sms(user.phone_number, otp_value)
-        
-        if sms_status:
-            return {"message": "OTP sent successfully", "user_id": db_user.id}
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to send OTP",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Mobile number not registered",
+        )
 
 # verify otp endpoint
 @router.post("/verify-otp", status_code=status.HTTP_200_OK)
@@ -289,4 +277,28 @@ async def update_profile(user_update: UserUpdate, current_user: User = Depends(g
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username is missing or invalid"
+        )
+
+@router.delete("/delete-account", status_code=status.HTTP_200_OK)
+async def delete_account(
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    Delete the current user's account and all associated data.
+    """
+    try:
+        deleted = await delete_account_svc(db, current_user.id)
+
+        if deleted:
+            return {"message": "Account and all related data deleted successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to delete account or account not found"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while deleting the account: {str(e)}"
         )
