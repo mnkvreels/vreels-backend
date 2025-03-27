@@ -10,7 +10,9 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
 from src.database import get_db
-from ..models.user import User, BlockedUsers, OTP
+from ..models.user import User, BlockedUsers, OTP, Follow
+from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags
+from ..models.activity import Activity
 from .schemas import UserCreate, UserUpdate
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
 import random
@@ -346,3 +348,53 @@ async def authenticateUserID(db, user_id):
     # Querying the 'users' table to check if the phone number exists
     user = db.query(User).filter(User.id == user_id).first()
     return user
+
+async def delete_account_svc(db: Session, user_id: int) -> bool:
+    """
+    Service to delete the user's account and all associated data.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return False
+    
+    # Delete related data from all associated tables
+
+    # 1. Delete post hashtags before deleting posts
+    post_ids = [post.id for post in db.query(Post).filter(Post.author_id == user_id).all()]
+    if post_ids:
+        db.execute(post_hashtags.delete().where(post_hashtags.c.post_id.in_(post_ids)))
+
+    # 2. Delete user posts, comments, and likes
+    db.query(Post).filter(Post.author_id == user_id).delete(synchronize_session=False)
+    db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
+    db.query(Like).filter(Like.user_id == user_id).delete(synchronize_session=False)
+
+    # 3. Delete saved posts and shared posts (sent and received)
+    db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).delete(synchronize_session=False)
+    db.query(UserSharedPosts).filter(UserSharedPosts.sender_user_id == user_id).delete(synchronize_session=False)
+    db.query(UserSharedPosts).filter(UserSharedPosts.receiver_user_id == user_id).delete(synchronize_session=False)
+
+    # 4. Delete from followers and following
+    db.query(Follow).filter((Follow.follower_id == user_id) | (Follow.following_id == user_id)).delete(synchronize_session=False)
+
+    # 5. Delete blocked users (both directions)
+    db.query(BlockedUsers).filter((BlockedUsers.blocker_id == user_id) | (BlockedUsers.blocked_id == user_id)).delete(synchronize_session=False)
+
+    # 6. Delete user activity logs
+    db.query(Activity).filter(Activity.username == user.username).delete(synchronize_session=False)
+    db.query(Activity).filter(Activity.username_like == user.username).delete(synchronize_session=False)
+    db.query(Activity).filter(Activity.username_comment == user.username).delete(synchronize_session=False)
+    db.query(Activity).filter(Activity.followed_username == user.username).delete(synchronize_session=False)
+
+    # 7. Delete OTP entries
+    db.query(OTP).filter(OTP.user_id == user_id).delete(synchronize_session=False)
+
+    # 8. Finally, delete the user itself
+    db.delete(user)
+    
+    # Commit changes to the database
+    db.commit()
+
+    return True
+
+
