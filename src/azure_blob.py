@@ -1,4 +1,5 @@
 from azure.storage.blob import BlobServiceClient
+from datetime import datetime
 import os
 from fastapi import UploadFile
 import uuid
@@ -15,7 +16,13 @@ blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"}
 
-async def upload_to_azure_blob(file: UploadFile, username: str) -> str:
+async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) -> str:
+    now = datetime.now()
+    year, month, day = now.strftime("%Y"), now.strftime("%m"), now.strftime("%d")
+    timestamp_str = now.strftime("%Y%m%d_%H%M%S")
+    
+    file_extension = file.filename.split(".")[-1]
+    unique_filename = f"{user_id}_{timestamp_str}.{file_extension}"
     try:
         # Extract file extension
         file_extension = file.filename.split(".")[-1].lower()
@@ -31,7 +38,7 @@ async def upload_to_azure_blob(file: UploadFile, username: str) -> str:
         container_client = blob_service_client.get_container_client(container_name)
 
         # Generate a unique file name and path with username
-        blob_name = f"{username}/{uuid.uuid4()}.{file_extension}"
+        blob_name = f"{username}/{year}/{month}/{day}/{unique_filename}"
 
         # Upload file to the correct container
         blob_client = container_client.get_blob_client(blob_name)
