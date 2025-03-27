@@ -20,6 +20,7 @@ import string
 import bcrypt
 from ..config import Settings
 from ..notification_service import send_push_notification
+from azure.communication.sms import SmsClient, SmsSendResult
 # Password hashing context using bcrypt
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -35,6 +36,9 @@ TOKEN_EXPIRE_MINS = Settings.ACCESS_TOKEN_EXPIRE_MINUTES  # 30 days
 # JWT Configuration
 SECRET_KEY = Settings.SECRET_KEY
 ALGORITHM = "HS256"
+
+connection_string = "endpoint=https://acs-for-testing.unitedstates.communication.azure.com/;accesskey=DShwBDybMlZQDy3AzLR1Kydo7EfUVOgq7qnZr8JwPWBL3UBAY0x8JQQJ99BBACULyCpZLpE0AAAAAZCS7wUJ"
+sms_client = SmsClient.from_connection_string(connection_string)
 
 def get_public_keys():
     try:
@@ -316,12 +320,44 @@ async def send_sms(mobile, otp):
             return True
         else:
             return False
+    elif str(mobile).startswith("1"):
+        # United States - Using Azure Communication Services (ACS)
+        from_number = "+18338432200"  # Replace with your ACS purchased phone number
+        to_number = f"+{mobile}"  # Ensure the mobile number is in E.164 format
+
+        # Define the SMS message
+        message = sms_client.send(
+            from_=from_number,
+            to=[to_number],
+            message=f"Hello your log in OTP is {otp}, please do not share with anyone.-Vreels"
+        )
+
+        # Send the SMS via Azure Communication Services
+        try:
+            response = sms_client.send(
+                from_=from_number,
+                to=[to_number],
+                message=f"Hello your log in OTP is {otp}, please do not share with anyone.-Vreels"
+            )
+            if response:
+                for result in response:
+                    if result.message_id:
+                        return True
+            else:
+                return False
+        except Exception as e:
+            print(f"Error sending SMS via ACS: {e}")
+            return False
+
     else:
-         return True
+        # Invalid country code or other cases
+        return True
 
 # OTP function to store OTP in the database
 async def otp_function(db, user_id, phone_number):
     if str(phone_number).startswith("91"):
+        otp = await generate_otp(6)
+    elif str(phone_number).startswith("1"):  # Check for US country code (+1)
         otp = await generate_otp(6)
     else:
         otp = "123456"
