@@ -28,10 +28,13 @@ post_hashtags = Table(
 # likes model (Tracks who liked which post)
 class Like(Base):
     __tablename__ = "likes"
-    id = Column(Integer, primary_key=True, index=True)
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    post_id = Column(Integer, ForeignKey("posts.id"), primary_key=True)
+    
+    user_id = Column(Integer, ForeignKey("users.id"))
+    post_id = Column(Integer, ForeignKey("posts.id"))
+    
     post = relationship("Post", back_populates="likes")
     user = relationship("User", back_populates="likes")
 
@@ -39,7 +42,7 @@ class Like(Base):
 class Comment(Base):
     __tablename__ = "comments"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
 

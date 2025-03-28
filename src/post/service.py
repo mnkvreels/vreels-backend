@@ -155,20 +155,27 @@ async def delete_post_svc(db: Session, post_id: int):
 async def like_post_svc(db: Session, post_id: int, username: str):
     post = await get_post_from_post_id_svc(db, post_id)
     if not post:
-        return False, "invalid post_id"
+        return False, "Invalid post_id"
 
     user = db.query(User).filter(User.username == username).first()
     if not user:
-        return False, "invalid username"
+        return False, "Invalid username"
 
+    # Check if like already exists in 'post_likes'
     if user in post.liked_by_users:
-        return False, "already liked"
+        return False, "Already liked"
 
-    # increase like count of post
+    # Add entry to 'post_likes'
     post.liked_by_users.append(user)
-    post.likes_count = len(post.liked_by_users)
 
-    # TO DO activity of like
+    # Explicitly add a 'Like' entry in 'likes' table
+    like = Like(post_id=post.id, user_id=user.id)
+    db.add(like)
+
+    # Increment the likes_count
+    post.likes_count += 1
+
+    # Add like activity
     like_activity = Activity(
         username=post.author.username,
         liked_post_id=post_id,
@@ -177,34 +184,41 @@ async def like_post_svc(db: Session, post_id: int, username: str):
     )
     db.add(like_activity)
 
-    # Update like count for the post
-    post.update_likes_and_comments_count(db)
-
     db.commit()
-    return True, "done"
+    return True, "Liked successfully"
 
 
 # unlike post
 async def unlike_post_svc(db: Session, post_id: int, username: str):
     post = await get_post_from_post_id_svc(db, post_id)
     if not post:
-        return False, "invalid post_id"
+        return False, "Invalid post_id"
 
     user = db.query(User).filter(User.username == username).first()
     if not user:
-        return False, "invalid username"
+        return False, "Invalid username"
 
-    if not user in post.liked_by_users:
-        return False, "already not liked"
+    # Check if user liked the post
+    if user not in post.liked_by_users:
+        return False, "Already not liked"
 
+    # Remove from 'post_likes'
     post.liked_by_users.remove(user)
-    post.likes_count = len(post.liked_by_users)
 
-    # Update like count for the post
-    post.update_likes_and_comments_count(db)
+    # Delete the corresponding 'Like' entry
+    existing_like = (
+        db.query(Like)
+        .filter_by(post_id=post.id, user_id=user.id)
+        .first()
+    )
+    if existing_like:
+        db.delete(existing_like)
+
+    # Decrement the likes_count safely
+    post.likes_count = max(post.likes_count - 1, 0)
 
     db.commit()
-    return True, "done"
+    return True, "Unliked successfully"
 
 
 # users who liked post
@@ -247,6 +261,14 @@ async def get_comments_for_post_svc(db: Session, post_id: int):
 
     comments = db.query(Comment).filter(Comment.post_id == post_id).all()
     return comments
+
+async def get_likes_for_post_svc(db: Session, post_id: int):
+    post = await get_post_from_post_id_svc(db, post_id)
+    if not post:
+        return []
+
+    likes = db.query(Like).filter(Like.post_id == post_id).all()
+    return likes
 
 async def save_post_svc(db: Session, user_id: int, post_id: int):
     # Check if post is already saved by user

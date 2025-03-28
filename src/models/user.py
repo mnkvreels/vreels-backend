@@ -9,13 +9,11 @@ class Follow(Base):
     The Follow class represents a many-to-many relationship between users.
     """
     __tablename__ = "follows"
-
-    follower_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    following_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    
-    # Define relationships to access follower and following users
-    following_user = relationship("User", back_populates="followers", foreign_keys=[follower_id])
-    follower_user = relationship("User", back_populates="following", foreign_keys=[following_id])
+    id = Column(Integer, primary_key=True)
+    follower_id = Column(Integer, ForeignKey('users.id'))
+    following_id = Column(Integer, ForeignKey('users.id'))
+    follower_user = relationship("User", back_populates="following", foreign_keys=[follower_id])
+    following_user = relationship("User", back_populates="followers", foreign_keys=[following_id])
 
 
 class User(Base):

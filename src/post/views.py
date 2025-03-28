@@ -18,6 +18,7 @@ from .service import (
     liked_users_post_svc,
     comment_on_post_svc,
     get_comments_for_post_svc,
+    get_likes_for_post_svc,
     save_post_svc,
     unsave_post_svc,
     get_saved_posts_svc,
@@ -230,9 +231,13 @@ async def unlike_post(request: PostRequest, db: Session = Depends(get_db), curre
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
-@router.get("/postlikes", response_model=list[User])
-async def users_like_post(request: PostRequest, db: Session = Depends(get_db)):
-    return await liked_users_post_svc(db, request.post_id)
+@router.get("/postlikes")
+async def get_likes_for_post(request: PostRequest, db: Session = Depends(get_db)):
+    likes = await get_likes_for_post_svc(db, request.post_id)
+    if not likes:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
+    
+    return likes
 
 
 @router.get("/", response_model=Post)
