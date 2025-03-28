@@ -1,8 +1,14 @@
 from requests import Session
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone
 from src.database import Base
+import enum
+
+class VisibilityEnum(str, enum.Enum):
+    public = "public"
+    private = "private"
+    friends = "friends"
 
 # Many-to-Many Association Table (users ↔ Liked posts)
 post_likes = Table(
@@ -57,7 +63,7 @@ class Post(Base):
 
     author_id = Column(Integer, ForeignKey("users.id"))
     author = relationship("User", back_populates="posts")
-
+    visibility = Column(Enum(VisibilityEnum), nullable=False, default="public")
     # Many-to-Many Relationships
     liked_by_users = relationship("User", secondary="post_likes", back_populates="liked_posts")
     hashtags = relationship("Hashtag", secondary="post_hashtags", back_populates="posts")

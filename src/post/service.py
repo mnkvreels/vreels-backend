@@ -4,7 +4,7 @@ from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
 from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like
-from ..models.user import User
+from ..models.user import User, Follow
 from ..auth.schemas import User as UserSchema
 from ..models.activity import Activity
 from sqlalchemy.exc import SQLAlchemyError
@@ -34,6 +34,7 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
         media=file_url,
         location=post.location,
         author_id=user_id,
+        visibility=post.visibility,
     )
 
     await create_hashtags_svc(db, db_post)
@@ -343,3 +344,64 @@ async def get_shared_posts_svc(db: Session, user_id: int):
 async def get_received_posts_svc(db: Session, user_id: int):
         """Fetches posts that a specific user has shared."""
         return db.query(UserSharedPosts).filter(UserSharedPosts.receiver_user_id == user_id).all()
+
+async def get_public_posts_svc(db: Session, user_id: int):
+    posts = db.query(Post).filter(Post.author_id == user_id, Post.visibility == "public").all()
+    return posts
+
+
+async def get_private_posts_svc(db: Session, user_id: int):
+    posts = db.query(Post).filter(Post.author_id == user_id, Post.visibility == "private").all()
+    return posts
+
+
+async def get_friends_posts_svc(db: Session, user_id: int):
+    # Get IDs of followers who follow the current user
+    follower_ids = [
+        follow.follower_id
+        for follow in db.query(Follow).filter(Follow.following_id == user_id).all()
+    ]
+
+    # Get posts visible to friends by followers
+    posts = (
+        db.query(Post)
+        .filter(
+            Post.author_id.in_(follower_ids),  # Posts created by followers
+            Post.visibility == "friends",  # Only 'friends' posts
+        )
+        .all()
+    )
+    return posts
+
+async def get_posts_by_visibility_svc(db: Session, user_id: int, visibility: str):
+    try:
+        # Public posts - visible to everyone
+        if visibility == "public":
+            posts = db.query(Post).filter(Post.visibility == "public").all()
+
+        # Private posts - visible only to the post author
+        elif visibility == "private":
+            posts = db.query(Post).filter(
+                Post.author_id == user_id, Post.visibility == "private"
+            ).all()
+
+        # Friends-only posts - visible to the user's followers
+        elif visibility == "friends":
+            # Get IDs of followers (users following the current user)
+            follower_ids = [
+                follow.follower_id
+                for follow in db.query(Follow).filter(Follow.following_id == user_id).all()
+            ]
+
+            # Get posts visible to followers
+            posts = db.query(Post).filter(Post.author_id.in_(follower_ids), Post.visibility == "friends").all()
+
+        # Invalid visibility option
+        else:
+            return None
+
+        return posts
+
+    except SQLAlchemyError as e:
+        print(f"Database error: {e}")
+        return None
