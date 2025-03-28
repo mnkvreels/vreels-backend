@@ -49,7 +49,7 @@ async def send_push_notification(device_token: str, platform: str, title: str, m
     }
 
     # Define notification payload for Android and iOS
-    if platform.lower() == "android":
+    if platform and platform.lower() == "android":
         notification_payload = {
             "notification": {
                 "title": title,
@@ -59,7 +59,7 @@ async def send_push_notification(device_token: str, platform: str, title: str, m
                 "extra_info": "Additional data if needed",
             },
         }
-    elif platform.lower() == "ios":
+    elif platform and platform.lower() == "ios":
         notification_payload = {
             "aps": {
                 "alert": {
@@ -70,7 +70,7 @@ async def send_push_notification(device_token: str, platform: str, title: str, m
             }
         }
     else:
-        raise ValueError("Unsupported platform. Only 'ios' and 'android' are supported.")
+        return {"Unsupported platform. Only 'ios' and 'android' are supported."}
 
     # Send the notification
     response = requests.post(url, json=notification_payload, headers=headers)
