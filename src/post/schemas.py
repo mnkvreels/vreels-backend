@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
-
+from ..models.post import VisibilityEnum
 
 # Pydantic model for Hashtag
 class Hashtag(BaseModel):
@@ -38,6 +38,7 @@ class PostCreate(BaseModel):
     content: Optional[str] = None
     media: Optional[str] = None
     location: Optional[str] = None
+    visibility: VisibilityEnum
 
     class Config:
         orm_mode = True

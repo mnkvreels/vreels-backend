@@ -24,13 +24,18 @@ from .service import (
     share_post_svc,
     unsend_share_svc,
     get_shared_posts_svc,
-    get_received_posts_svc
+    get_received_posts_svc,
+    get_public_posts_svc,
+    get_private_posts_svc,
+    get_friends_posts_svc,
+    get_posts_by_visibility_svc
 )
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username
 from ..auth.schemas import User
 from ..azure_blob import upload_to_azure_blob
 from ..notification_service import send_push_notification
+from ..models.post import VisibilityEnum
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -51,13 +56,13 @@ class CommentRequest(BaseModel):
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
 @router.post("/", response_model=Post, status_code=status.HTTP_201_CREATED)
-async def create_post(content: str = Form(...), file: UploadFile = Form(...), location: str = Form(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_post(visibility: VisibilityEnum = Form(...), content: str = Form(...), file: UploadFile = Form(...), location: str = Form(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     user = current_user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-    post = PostCreate(content=content, location=location)
+    post = PostCreate(content=content, location=location, visibility=visibility)
     file_url = None
     if file:
         try:
@@ -69,7 +74,7 @@ async def create_post(content: str = Form(...), file: UploadFile = Form(...), lo
     db_post = await create_post_svc(db, post, current_user.id, file_url)
 
     # Fetch followers of the user
-    followers = await get_followers_svc(db, current_user.id)
+    # followers = await get_followers_svc(db, current_user.id)
 
     # Send notifications to followers
     # for follow in followers:
@@ -273,3 +278,48 @@ async def get_comments_for_post(request: PostRequest, db: Session = Depends(get_
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
     
     return comments
+
+# Get public posts
+@router.get("/public", response_model=List[Post])
+async def get_public_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_public_posts_svc(db,current_user.id)
+    if not posts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No public posts found."
+        )
+    return posts
+
+# Get private posts (only visible to uuser)
+@router.get("/private", response_model=List[Post])
+async def get_private_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_private_posts_svc(db, current_user.id)
+    if not posts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No private posts found."
+        )
+    return posts
+
+# get visible only to friends posts
+@router.get("/friends", response_model=List[Post])
+async def get_friends_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_friends_posts_svc(db, current_user.id)
+
+    if not posts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No friends' posts found."
+        )
+
+    return posts
+
+# get posts by visibility
+@router.get("/posts", response_model=List[Post])
+async def get_posts_by_visibility(visibility: VisibilityEnum, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    posts = await get_posts_by_visibility_svc(db, current_user.id, visibility)
+
+    if not posts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No {visibility} posts found.",
+        )
+
+    return posts
