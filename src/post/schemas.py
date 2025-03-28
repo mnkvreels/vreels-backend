@@ -26,6 +26,8 @@ class Comment(BaseModel):
 
 # Pydantic model for Like (to represent users who liked the post)
 class Like(BaseModel):
+    id: int
+    created_at: datetime
     user_id: int
     post_id: int
 

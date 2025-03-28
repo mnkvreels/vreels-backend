@@ -9,13 +9,11 @@ class Follow(Base):
     The Follow class represents a many-to-many relationship between users.
     """
     __tablename__ = "follows"
-
-    follower_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    following_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    
-    # Define relationships to access follower and following users
-    following_user = relationship("User", back_populates="followers", foreign_keys=[follower_id])
-    follower_user = relationship("User", back_populates="following", foreign_keys=[following_id])
+    id = Column(Integer, primary_key=True)
+    follower_id = Column(Integer, ForeignKey('users.id'))
+    following_id = Column(Integer, ForeignKey('users.id'))
+    follower_user = relationship("User", back_populates="following", foreign_keys=[follower_id])
+    following_user = relationship("User", back_populates="followers", foreign_keys=[following_id])
 
 
 class User(Base):
@@ -24,7 +22,6 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     phone_number = Column(BigInteger, unique=True)
     username = Column(String(255), unique=True)
-    # hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
@@ -35,7 +32,6 @@ class User(Base):
     bio = Column(String(255))
     email = Column(String(255), unique=True)
     location = Column(String(255))
-    
     # New fields for push notifications
     device_token = Column(String, nullable=True)  # Device token for push notifications
     platform = Column(String(50), nullable=True)  # Platform: iOS or Android
@@ -44,15 +40,11 @@ class User(Base):
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
-    # Many-to-Many Relationships
     liked_posts = relationship("Post", secondary="post_likes", back_populates="liked_by_users")
-    followers = relationship("User", secondary="follows",
-                             primaryjoin=id == Follow.following_id,
-                             secondaryjoin=id == Follow.follower_id,
-                             backref="following")
     
-    followers = relationship("Follow", back_populates="following_user", foreign_keys="[Follow.follower_id]")
-    following = relationship("Follow", back_populates="follower_user", foreign_keys="[Follow.following_id]")
+    # Many-to-Many Relationships (via Follow table)
+    followers = relationship("Follow", back_populates="following_user", foreign_keys="[Follow.following_id]")
+    following = relationship("Follow", back_populates="follower_user", foreign_keys="[Follow.follower_id]")
 
     followers_count = Column(BigInteger, default=0)
     following_count = Column(BigInteger, default=0)

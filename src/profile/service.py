@@ -12,30 +12,42 @@ async def follow_svc(db: Session, follower: str, following: str):
     db_follower = await existing_user(db, follower, "")
     db_following = await existing_user(db, following, "")
     if not db_follower or not db_following:
-        return False
+        return {"error": "User not found."}
 
+    # Check if the follow relationship already exists
     db_follow = (
         db.query(Follow)
         .filter_by(follower_id=db_follower.id, following_id=db_following.id)
         .first()
     )
     if db_follow:
-        return False
+        # Already following
+        return {"message": f"You are already following {db_following.username}."}
 
-    db_follow = Follow(follower_id=db_follower.id, following_id=db_following.id)
-    db.add(db_follow)
+    try:
+        # Create the follow relationship
+        db_follow = Follow(follower_id=db_follower.id, following_id=db_following.id)
+        db.add(db_follow)
 
-    db_follower.following_count += 1
-    db_following.followers_count += 1
+        # Recalculate follower and following counts dynamically
+        db_follower.following_count += 1
+        db_following.followers_count += 1
 
-    follow_activity = Activity(
-        username=following,
-        followed_username=db_follower.username,
-        followed_user_pic=db_follower.profile_pic,
-    )
-    db.add(follow_activity)
+        # Create a follow activity
+        follow_activity = Activity(
+            username=following,
+            followed_username=db_follower.username,
+            followed_user_pic=db_follower.profile_pic,
+        )
+        db.add(follow_activity)
 
-    db.commit()
+        db.commit()
+        return {"message": f"You are now following {db_following.username}."}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error following user: {str(e)}")
+
 
 
 # unfollow activity
@@ -43,22 +55,33 @@ async def unfollow_svc(db: Session, follower: str, following: str):
     db_follower = await existing_user(db, follower, "")
     db_following = await existing_user(db, following, "")
     if not db_follower or not db_following:
-        return False
+        return {"error": "User not found."}
 
+    # Check if the follow relationship exists
     db_follow = (
         db.query(Follow)
         .filter_by(follower_id=db_follower.id, following_id=db_following.id)
         .first()
     )
     if not db_follow:
-        return False
+        # Not following, return error message
+        return {"message": f"You are not following {db_following.username}."}
 
-    db.delete(db_follow)
+    try:
+        # Remove the follow relationship
+        db.delete(db_follow)
 
-    db_follower.following_count -= 1
-    db_following.followers_count -= 1
+        # Recalculate follower and following counts dynamically
+        db_follower.following_count -= 1
+        db_following.followers_count -= 1
 
-    db.commit()
+        db.commit()
+        return {"message": f"You have unfollowed {db_following.username}."}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error unfollowing user: {str(e)}")
+
 
 
 # get followers
@@ -68,26 +91,30 @@ async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
         return []
 
     try:
+        # Fetch followers by joining the Follow table and User table
         db_followers = (
-            db.query(Follow)  # Get both Follow and User objects
-            .filter(Follow.following_id == user_id)
-            .join(User, User.id == Follow.follower_id)
+            db.query(User)  # Directly select distinct users
+            .join(Follow, Follow.follower_id == User.id)  # Join on the follower ID
+            .filter(Follow.following_id == user_id)  # We want the followers of the user
+            .distinct(User.id)  # Ensures each follower is unique
             .all()
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail="Database error")
 
     followers = []
-    for follow in db_followers:
+    for user in db_followers:
         followers.append(
             {
-                "profile_pic": follow.follower_user.profile_pic,
-                "name": follow.follower_user.name,
-                "username": follow.follower_user.username,
+                "user_id": user.id,
+                "profile_pic": user.profile_pic,
+                "name": user.name,
+                "username": user.username,
             }
         )
 
     return FollowersList(followers=followers)
+
 
 # get following
 async def get_following_svc(db: Session, user_id: int) -> list[FollowingList]:
@@ -96,22 +123,26 @@ async def get_following_svc(db: Session, user_id: int) -> list[FollowingList]:
         return []
 
     try:
-        db_followers = (
-            db.query(Follow)
+        # Avoid duplicates by selecting distinct `following_id`
+        db_following = (
+            db.query(User)
+            .join(Follow, Follow.following_id == User.id)
             .filter(Follow.follower_id == user_id)
-            .join(User, User.id == Follow.following_id)
+            .distinct(User.id)  # This ensures no duplicate users
             .all()
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail="Database error")
 
+    # Prepare the response with distinct following users
     following = []
-    for follow in db_followers:
+    for user in db_following:
         following.append(
             {
-                "profile_pic": follow.following_user.profile_pic,
-                "name": follow.following_user.name,
-                "username": follow.following_user.username,
+                "user_id": user.id,
+                "profile_pic": user.profile_pic,
+                "name": user.name,
+                "username": user.username,
             }
         )
 

@@ -13,6 +13,7 @@ class Profile(UserBase):
 
 
 class UserSchema(BaseModel):
+    user_id: int
     profile_pic: Optional[str] = None
     username: str
     name: Optional[str] = None
