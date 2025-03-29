@@ -98,7 +98,7 @@ async def create_post(visibility: VisibilityEnum = Form(...), content: str = For
     
     return db_post
 
-@router.get("/user", response_model=list[Post])
+@router.get("/user")
 async def get_current_user_posts(page: int, limit: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # verify the token
     user = current_user
@@ -110,12 +110,16 @@ async def get_current_user_posts(page: int, limit: int, db: Session = Depends(ge
     return posts
 
 
-@router.get("/userposts", response_model=list[Post])
-async def get_user_posts_by_username(request: UserRequest, db: Session = Depends(get_db)):
+@router.get("/userposts")
+async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db)):
     # verify token
     user = await existing_user(db, request.username)
-
-    return await get_user_posts_svc(db, user.id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
+        )
+    posts = await get_user_posts_svc(db, user.id, page, limit)
+    return posts
 
 @router.post("/savepost", status_code=status.HTTP_201_CREATED)
 async def save_post(request: SavePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
@@ -126,8 +130,13 @@ async def unsave_post(request: SavePostRequest, db: Session = Depends(get_db), c
     return await unsave_post_svc(db, current_user.id, request.post_id)
 
 @router.get("/savedposts", status_code=status.HTTP_200_OK)
-async def get_saved_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    saved_posts = await get_saved_posts_svc(db, current_user.id)
+async def get_saved_posts(page: int, limit: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    user = current_user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
+        )
+    saved_posts = await get_saved_posts_svc(db, user.id, page, limit)
     return saved_posts
 
 @router.post("/sharepost")
@@ -185,7 +194,7 @@ async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends
 
 @router.get("/feed")
 async def get_random_posts(
-    page: int = 1, limit: int = 5, hashtag: str = None, db: Session = Depends(get_db)
+    page: int, limit: int, hashtag: str = None, db: Session = Depends(get_db)
 ):
     return await get_random_posts_svc(db, page, limit, hashtag)
 

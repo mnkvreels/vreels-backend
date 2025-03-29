@@ -49,8 +49,9 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
 
 
 # get user's posts
-async def get_user_posts_svc(db: Session, user_id: int, page: int = 1, limit: int = 6) -> list[PostSchema]:
+async def get_user_posts_svc(db: Session, user_id: int, page: int, limit: int) -> list[PostSchema]:
     offset = (page - 1) * limit
+    total_count = db.query(Post).filter(Post.author_id == user_id).count()
     posts = (
         db.query(Post)
         .filter(Post.author_id == user_id)
@@ -60,7 +61,13 @@ async def get_user_posts_svc(db: Session, user_id: int, page: int = 1, limit: in
     )
     for post in posts:
         post.update_likes_and_comments_count(db)  # Update likes and comments count for each post
-    return posts
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
+        "data": posts
+    }
 
 
 # get posts from a hashtag
@@ -77,12 +84,12 @@ async def get_posts_from_hashtag_svc(db: Session, hashtag_name: str):
 # get random posts for feed
 # return latest posts of all users
 async def get_random_posts_svc(
-    db: Session, page: int = 1, limit: int = 10, hashtag: str = None
+    db: Session, page: int, limit: int, hashtag: str = None
 ):
-    total_posts = db.query(Post).count()
+    total_count = db.query(Post).count()
 
     offset = (page - 1) * limit
-    if offset >= total_posts:
+    if offset >= total_count:
         return []
 
     posts = db.query(Post, User.username).join(User).order_by(desc(Post.created_at))
@@ -99,7 +106,13 @@ async def get_random_posts_svc(
         post.update_likes_and_comments_count(db)  # Update likes and comments count for each post
         result.append(post_dict)
 
-    return result
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
+        "data": result,
+    }
 
 
 # get post by post id
@@ -279,8 +292,26 @@ async def save_post_svc(db: Session, user_id: int, post_id: int):
     if existing_entry:
         raise HTTPException(status_code=400, detail="Post already saved.")
 
-    # Create a new entry in user_saved_posts table
-    saved_post = UserSavedPosts(user_id=user_id, saved_post_id=post_id)
+    # Fetch the post details from the posts table
+    post = db.query(Post).filter(Post.id == post_id).first()
+
+    # If the post doesn't exist, raise an error
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found.")
+
+    # Create a new entry in user_saved_posts table with all post attributes
+    saved_post = UserSavedPosts(
+        user_id=user_id,
+        saved_post_id=post.id,
+        content=post.content,
+        media=post.media,
+        location=post.location,
+        created_at=post.created_at,
+        likes_count=post.likes_count,
+        comments_count=post.comments_count,
+        share_count=post.share_count,
+        visibility=post.visibility,
+    )
     db.add(saved_post)
     db.commit()
     db.refresh(saved_post)
@@ -293,7 +324,6 @@ async def unsave_post_svc(db: Session, user_id: int, post_id: int):
         UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post_id
     ).first()
 
-    # If no saved post found, raise an error
     if not saved_post:
         raise HTTPException(status_code=404, detail="Post not found in saved list.")
 
@@ -303,8 +333,40 @@ async def unsave_post_svc(db: Session, user_id: int, post_id: int):
 
     return {"message": "Post unsaved successfully"}
 
-async def get_saved_posts_svc(db: Session, user_id: int):
-    return db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).all()
+async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
+    offset = (page - 1) * limit
+    total_count = (
+        db.query(UserSavedPosts)
+        .filter(UserSavedPosts.user_id == user_id)
+        .count()
+    )
+    saved_posts = (
+        db.query(
+            UserSavedPosts.id.label("saved_post_id"),
+            Post.id.label("post_id"),
+            Post.content,
+            Post.media,
+            Post.location,
+            Post.created_at,
+            Post.likes_count,
+            Post.comments_count,
+            Post.share_count,
+            Post.visibility
+        )
+        .join(Post, UserSavedPosts.saved_post_id == Post.id)
+        .filter(UserSavedPosts.user_id == user_id)
+        .order_by(desc(UserSavedPosts.created_at))
+        .offset(offset).limit(limit)
+        .all()
+    )
+    
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
+        "data": [dict(row._mapping) for row in saved_posts],
+    }
 
 async def share_post_svc(db: Session, sender_user_id: int, request: SharePostRequest):
         """Creates a share record and updates share_count."""
