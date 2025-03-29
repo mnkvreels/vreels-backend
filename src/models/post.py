@@ -101,7 +101,16 @@ class UserSavedPosts(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     saved_post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))  # Metadata column
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    # Post attributes to be saved
+    content = Column(String)
+    media = Column(String)
+    location = Column(String)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    likes_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0)
+    share_count = Column(Integer, default=0)
+    visibility = Column(Enum(VisibilityEnum), nullable=False, default="public")
 
     # Relationships
     user = relationship("User", back_populates="saved_posts")
