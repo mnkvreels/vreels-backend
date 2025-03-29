@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, HTTPException, Form
+from fastapi import APIRouter, Depends, status, HTTPException, Form, UploadFile, File
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -6,6 +6,7 @@ from src.models.user import User, OTP
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest
 from src.database import get_db
 from datetime import timedelta, datetime, timezone
+from ..azure_blob import upload_to_azure_blob
 
 from src.auth.service import (
     get_current_user,
@@ -92,7 +93,35 @@ async def profile(current_user: User = Depends(get_current_user)):
 #     return {"message": "Profile updated successfully."}
 
 @router.put("/profile")
-async def update_profile(user_update: UserUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def update_profile(
+    name: str = Form(None),
+    bio: str = Form(None),
+    dob: str = Form(None),
+    gender: str = Form(None),
+    location: str = Form(None),
+    profile_pic: UploadFile = File(None),  # Accept profile picture
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Create a UserUpdate object
+    user_update = UserUpdate(
+        name=name,
+        bio=bio,
+        dob=dob,
+        gender=gender,
+        location=location,
+    )
+
+    # Check if a new profile pic is uploaded
+    if profile_pic:
+        # Upload to Azure and get the URL
+        new_profile_pic_url = await upload_to_azure_blob(
+            profile_pic, current_user.username, str(current_user.id)
+        )
+        # Set new profile pic URL to update
+        user_update.profile_pic = new_profile_pic_url
+
+    # Call the update service
     updated_user = await update_user_svc(db, current_user, user_update)
     return jsonable_encoder(updated_user)
 
