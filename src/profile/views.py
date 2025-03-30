@@ -79,11 +79,28 @@ async def get_followers(db: Session = Depends(get_db), current_user: User = Depe
         )
     return await get_followers_svc(db, current_user.id)
 
+@router.get("/userfollowers", response_model=FollowersList)
+async def get_followers_by_userid(request: UserRequest, db: Session = Depends(get_db)):
+    user = await get_user_by_username(db, request.username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token"
+        )
+    return await get_followers_svc(db, user.id)
 
 @router.get("/following", response_model=FollowingList)
-async def get_followers(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_following(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token"
         )
     return await get_following_svc(db, current_user.id)
+
+@router.get("/userfollowing", response_model=FollowingList)
+async def get_following_by_userid(request: UserRequest, db: Session = Depends(get_db)):
+    user = await get_user_by_username(db, request.username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token"
+        )
+    return await get_following_svc(db, user.id)
