@@ -5,6 +5,7 @@ from ..auth.schemas import UserBase
 
 
 class Profile(UserBase):
+    id: Optional[int] = None
     name: Optional[str] = None
     bio: Optional[str] = None
     followers_count: Optional[int] = 0
