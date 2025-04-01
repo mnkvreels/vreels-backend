@@ -241,14 +241,14 @@ async def unlike_post(request: PostRequest, db: Session = Depends(get_db), curre
 
 
 @router.get("/postlikes")
-async def get_likes_for_post(request: PostRequest, db: Session = Depends(get_db)):
-    likes = await get_likes_for_post_svc(db, request.post_id)
+async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db)):
+    likes = await get_likes_for_post_svc(db, request.post_id, page, limit)
     if not likes:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No likes found")
     
     return likes
 
-
+ 
 @router.get("/", response_model=Post)
 async def get_post(request: PostRequest, db: Session = Depends(get_db)):
     db_post = await get_post_from_post_id_svc(db, request.post_id)
@@ -286,12 +286,18 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
 
 
 @router.get("/postcomments")
-async def get_comments_for_post(request: PostRequest, db: Session = Depends(get_db)):
-    comments = await get_comments_for_post_svc(db, request.post_id)
+async def get_comments_for_post(
+    page: int,
+    limit: int,
+    request: PostRequest, 
+    db: Session = Depends(get_db)
+):
+    comments = await get_comments_for_post_svc(db, request.post_id, page, limit)
     if not comments:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
     
     return comments
+
 
 # Get public posts
 @router.get("/public", response_model=List[Post])

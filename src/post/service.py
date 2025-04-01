@@ -1,5 +1,6 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import re
+import math
 from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
@@ -116,29 +117,16 @@ async def get_random_posts_svc(
 
 
 # get post by post id
-async def get_post_from_post_id_svc(db: Session, post_id: int) -> PostSchema:
-    # Subquery for likes count
-    likes_count_subquery = (
-        db.query(func.count(Like.id))
-        .filter(Like.post_id == Post.id)
-        .correlate(Post)
-        .scalar_subquery()
-    )
+import math
 
-    # Subquery for comments count
-    comments_count_subquery = (
-        db.query(func.count(Comment.id))
-        .filter(Comment.post_id == Post.id)
-        .correlate(Post)
-        .scalar_subquery()
-    )
-
-    # Main query to get the post with counts
+async def get_post_from_post_id_svc(db: Session, post_id: int, page: int = 1, limit: int = 6) -> dict:
+    offset = (page - 1) * limit
+    
     post_query = (
-        db.query(
-            Post,
-            likes_count_subquery.label("likes_count"),
-            comments_count_subquery.label("comments_count"),
+        db.query(Post)
+        .options(
+            joinedload(Post.author),
+            joinedload(Post.hashtags),
         )
         .filter(Post.id == post_id)
         .first()
@@ -147,14 +135,94 @@ async def get_post_from_post_id_svc(db: Session, post_id: int) -> PostSchema:
     if not post_query:
         return None
 
-    # Unpack results
-    post, likes_count, comments_count = post_query
+    # Fetch total likes count and calculate pagination metadata for likes
+    total_likes_count = db.query(func.count(Like.id)).filter(Like.post_id == post_id).scalar()
+    total_likes_pages = max(1, math.ceil(total_likes_count / limit))
 
-    # Update likes and comments count
-    post.likes_count = likes_count
-    post.comments_count = comments_count
+    # Fetch paginated likes
+    likes_query = (
+        db.query(Like)
+        .options(joinedload(Like.user))
+        .filter(Like.post_id == post_id)
+        .order_by(desc(Like.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
 
-    return post
+    # Fetch total comments count and calculate pagination metadata for comments
+    total_comments_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post_id).scalar()
+    total_comments_pages = max(1, math.ceil(total_comments_count / limit))
+
+    # Fetch paginated comments
+    comments_query = (
+        db.query(Comment)
+        .options(joinedload(Comment.user))
+        .filter(Comment.post_id == post_id)
+        .order_by(desc(Comment.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    # Construct response with metadata
+    post_response = {
+        "id": post_query.id,
+        "content": post_query.content,
+        "media": post_query.media,
+        "location": post_query.location,
+        "visibility": post_query.visibility.value,
+        "author_id": post_query.author_id,
+        "likes_count": post_query.likes_count,
+        "comments_count": post_query.comments_count,
+        "created_at": post_query.created_at,
+        "hashtags": [{"id": tag.id, "name": tag.name} for tag in post_query.hashtags],
+        
+        # Likes metadata and list of likes
+        "likes": {
+            "metadata": {
+                "total_count": total_likes_count,
+                "total_pages": total_likes_pages,
+                "current_page": page,
+                "page": page,
+                "limit": limit
+            },
+            "items": [
+                {
+                    "user_id": like.user.id,
+                    "username": like.user.username,
+                    "profile_pic": like.user.profile_pic,
+                    "created_at": like.created_at
+                }
+                for like in likes_query
+            ]
+        },
+
+        # Comments metadata and list of comments
+        "comments": {
+            "metadata": {
+                "total_count": total_comments_count,
+                "total_pages": total_comments_pages,
+                "current_page": page,
+                "page": page,
+                "limit": limit
+            },
+            "items": [
+                {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "created_at": comment.created_at,
+                    "user_id": comment.user.id,
+                    "username": comment.user.username,
+                    "profile_pic": comment.user.profile_pic,
+                    "post_id": comment.post_id
+                }
+                for comment in comments_query
+            ]
+        }
+    }
+
+    return post_response
 
 
 # delete post svc
@@ -267,21 +335,75 @@ async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: 
 
 
 # Get comments for a post
-async def get_comments_for_post_svc(db: Session, post_id: int):
-    post = await get_post_from_post_id_svc(db, post_id)
-    if not post:
-        return []
+async def get_comments_for_post_svc(db: Session, post_id: int, page: int, limit: int):
+    offset = (page - 1) * limit
 
-    comments = db.query(Comment).filter(Comment.post_id == post_id).all()
-    return comments
+    # Get total count of comments
+    total_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post_id).scalar()
+    total_pages = math.ceil(total_count / limit) if total_count > 0 else 1
 
-async def get_likes_for_post_svc(db: Session, post_id: int):
-    post = await get_post_from_post_id_svc(db, post_id)
-    if not post:
-        return []
+    # Get paginated comments
+    comments = (
+        db.query(Comment)
+        .options(joinedload(Comment.user))  # Load related User data
+        .filter(Comment.post_id == post_id)
+        .order_by(desc(Comment.created_at))  # Order by latest comments first
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
-    likes = db.query(Like).filter(Like.post_id == post_id).all()
-    return likes
+    return {
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "page": page,
+        "limit": limit,
+        "comments": [
+            {
+                "comment_id": comment.id,
+                "content": comment.content,
+                "user_id": comment.user.id,
+                "username": comment.user.username,
+                "profile_pic": comment.user.profile_pic,
+                "created_at": comment.created_at
+            }
+            for comment in comments
+        ]
+    }
+
+async def get_likes_for_post_svc(db: Session, post_id: int, page: int, limit: int):
+    offset = (page - 1) * limit
+
+    # Get total count of likes
+    total_count = db.query(func.count(Like.id)).filter(Like.post_id == post_id).scalar()
+    total_pages = math.ceil(total_count / limit) if total_count > 0 else 1
+
+    # Get paginated likes
+    likes = (
+        db.query(Like)
+        .options(joinedload(Like.user))  # Load related User data
+        .filter(Like.post_id == post_id)
+        .order_by(desc(Like.created_at))  # Order by latest likes first
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "page": page,
+        "limit": limit,
+        "likes": [
+            {
+                "user_id": like.user.id,
+                "username": like.user.username,
+                "profile_pic": like.user.profile_pic,
+                "created_at": like.created_at
+            }
+            for like in likes
+        ]
+    }
 
 async def save_post_svc(db: Session, user_id: int, post_id: int):
     # Check if post is already saved by user

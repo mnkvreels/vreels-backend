@@ -3,6 +3,15 @@ from typing import List, Optional
 from datetime import datetime
 from ..models.post import VisibilityEnum
 
+class PaginationMetadata(BaseModel):
+    total_count: int
+    total_pages: int
+    page: int
+    limit: int
+    
+    class Config:
+        orm_mode = True
+
 # Pydantic model for Hashtag
 class Hashtag(BaseModel):
     id: int
@@ -16,9 +25,11 @@ class Hashtag(BaseModel):
 class Comment(BaseModel):
     id: int
     content: str
+    username: Optional[str]
     created_at: datetime
     user_id: int
     post_id: int
+    metadata: PaginationMetadata
 
     class Config:
         orm_mode = True
@@ -28,12 +39,13 @@ class Comment(BaseModel):
 class Like(BaseModel):
     id: int
     created_at: datetime
+    username: Optional[str]
     user_id: int
     post_id: int
-
+    metadata: PaginationMetadata
+    
     class Config:
         orm_mode = True
-
 
 # Pydantic model for Post creation (when creating a new post)
 class PostCreate(BaseModel):
@@ -54,8 +66,8 @@ class Post(PostCreate):
     comments_count: int  # New field for the count of comments
     created_at: datetime
     hashtags: List[Hashtag] = []  # List of hashtags related to the post
-    comments: List[Comment] = []  # List of comments related to the post
-    likes: List[Like] = []  # List of likes (users who liked the post)
+    comments: dict = []  # List of comments related to the post
+    likes: dict = []  # List of likes (users who liked the post)
 
     class Config:
         orm_mode = True
