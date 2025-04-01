@@ -52,7 +52,7 @@ class PostCreate(BaseModel):
     content: Optional[str] = None
     media: Optional[str] = None
     location: Optional[str] = None
-    visibility: VisibilityEnum
+    visibility: VisibilityEnum = VisibilityEnum.public
 
     class Config:
         orm_mode = True

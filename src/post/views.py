@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -57,7 +57,14 @@ class CommentRequest(BaseModel):
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
 @router.post("/", response_model=Post, status_code=status.HTTP_201_CREATED)
-async def create_post(visibility: VisibilityEnum = Form(...), content: str = Form(...), file: UploadFile = Form(...), location: str = Form(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_post(
+    visibility: VisibilityEnum = Form(VisibilityEnum.public),
+    content: Optional[str] = Form(None),
+    file: UploadFile = Form(...),
+    location: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     user = current_user
     if not user:
         raise HTTPException(

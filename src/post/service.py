@@ -13,18 +13,21 @@ from sqlalchemy.exc import SQLAlchemyError
 # create hashtag from posts' content
 # hey #fun
 async def create_hashtags_svc(db: Session, post: Post):
-    regex = r"#\w+"
-    matches = re.findall(regex, post.content)
+    if post.content:
+        regex = r"#\w+"
+        matches = re.findall(regex, post.content)
 
-    for match in matches:
-        name = match[1:]
+        for match in matches:
+            name = match[1:]
 
-        hashtag = db.query(Hashtag).filter(Hashtag.name == name).first()
-        if not hashtag:
-            hashtag = Hashtag(name=name)
-            db.add(hashtag)
-            db.commit()
-        post.hashtags.append(hashtag)
+            hashtag = db.query(Hashtag).filter(Hashtag.name == name).first()
+            if not hashtag:
+                hashtag = Hashtag(name=name)
+                db.add(hashtag)
+                db.commit()
+            post.hashtags.append(hashtag)
+    else:
+        matches = []
 
 
 # create post
