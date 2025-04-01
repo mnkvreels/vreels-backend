@@ -201,9 +201,9 @@ async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends
 
 @router.get("/feed")
 async def get_random_posts(
-    page: int, limit: int, hashtag: str = None, db: Session = Depends(get_db)
+    page: int, limit: int, hashtag: str = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)
 ):
-    return await get_random_posts_svc(db, page, limit, hashtag)
+    return await get_random_posts_svc(current_user, db, page, limit, hashtag)
 
 
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
@@ -217,7 +217,7 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
         )
 
     post = await get_post_from_post_id_svc(db, request.post_id)
-    if post.author_id != user.id:
+    if post and post["author_id"] != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized to delete this post.",
@@ -228,14 +228,12 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
 
 @router.post("/like", status_code=status.HTTP_204_NO_CONTENT)
 async def like_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res, detail = await like_post_svc(db, request.post_id, current_user.username)
-    if res == False:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    res = await like_post_svc(db, request.post_id, current_user.username)
     # Get the post owner and notify them
     post = await get_post_from_post_id_svc(db, request.post_id)
-    if post.author_id != current_user.id:
+    if post and post["author_id"]!= current_user.id:
         await send_notification_to_user(db,
-            user_id=post.author_id,
+            user_id=post["author_id"],
             title="❤️ New Like on Your Post!",
             message=f"{current_user.username} liked your post."
         )
@@ -282,9 +280,9 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
     
     # Get the post owner and notify them
     post = await get_post_from_post_id_svc(db, request.post_id)
-    if post.author_id != current_user.id:
+    if post and post["author_id"] != current_user.id:
         await send_notification_to_user(db,
-            user_id=post.author_id,
+            user_id=post["author_id"],
             title="💬 New Comment on Your Post!",
             message=f"{current_user.username} commented: {request.content}"
         )

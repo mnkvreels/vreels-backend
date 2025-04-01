@@ -88,7 +88,7 @@ async def get_posts_from_hashtag_svc(db: Session, hashtag_name: str):
 # get random posts for feed
 # return latest posts of all users
 async def get_random_posts_svc(
-    db: Session, page: int, limit: int, hashtag: str = None
+    current_user: User, db: Session, page: int, limit: int, hashtag: str = None
 ):
     total_count = db.query(Post).count()
 
@@ -107,6 +107,21 @@ async def get_random_posts_svc(
     for post, username in posts:
         post_dict = post.__dict__
         post_dict["username"] = username
+        hashtags = (
+            db.query(Hashtag)
+            .join(post_hashtags)
+            .filter(post_hashtags.c.post_id == post.id)
+            .all()
+        )
+        post_dict["hashtags"] = [hashtag.name for hashtag in hashtags]
+        
+        liked_post = db.query(Like).filter(Like.user_id == current_user.id, Like.post_id == post.id).first()
+        post_dict["is_liked"] = liked_post is not None
+
+        # Check if the current user has saved the post
+        saved_post = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == current_user.id, UserSavedPosts.saved_post_id == post.id).first()
+        post_dict["is_saved"] = saved_post is not None
+        
         post.update_likes_and_comments_count(db)  # Update likes and comments count for each post
         result.append(post_dict)
 
@@ -230,33 +245,35 @@ async def get_post_from_post_id_svc(db: Session, post_id: int, page: int = 1, li
 
 # delete post svc
 async def delete_post_svc(db: Session, post_id: int):
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     db.delete(post)
     db.commit()
 
 
 # like post
 async def like_post_svc(db: Session, post_id: int, username: str):
-    post = await get_post_from_post_id_svc(db, post_id)
+    # Fetch the post object (not just a dictionary) from the database
+    post = db.query(Post).filter(Post.id == post_id).first()
+
     if not post:
-        return False, "Invalid post_id"
+        raise HTTPException(status_code=404, detail="Post not found")
 
+    # Fetch the user object using the username
     user = db.query(User).filter(User.username == username).first()
+
     if not user:
-        return False, "Invalid username"
+        raise HTTPException(status_code=404, detail="User not found")
 
-    # Check if like already exists in 'post_likes'
-    if user in post.liked_by_users:
-        return False, "Already liked"
+    # Check if the user has already liked the post
+    existing_like = db.query(Like).filter(Like.post_id == post_id, Like.user_id == user.id).first()
 
-    # Add entry to 'post_likes'
+    if existing_like:
+        return {"message": "You have already liked this post."}
+
+    # If not liked, add the like
     post.liked_by_users.append(user)
-
-    # Explicitly add a 'Like' entry in 'likes' table
-    like = Like(post_id=post.id, user_id=user.id)
-    db.add(like)
-
-    # Increment the likes_count
+    new_like = Like(post_id=post_id, user_id=user.id)
+    db.add(new_like)
     post.likes_count += 1
 
     # Add like activity
@@ -269,12 +286,12 @@ async def like_post_svc(db: Session, post_id: int, username: str):
     db.add(like_activity)
 
     db.commit()
-    return True, "Liked successfully"
+    return {"message": "Post liked successfully."}
 
 
 # unlike post
 async def unlike_post_svc(db: Session, post_id: int, username: str):
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         return False, "Invalid post_id"
 
@@ -307,7 +324,7 @@ async def unlike_post_svc(db: Session, post_id: int, username: str):
 
 # users who liked post
 async def liked_users_post_svc(db: Session, post_id: int) -> list[UserSchema]:
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         return []
     liked_users = post.liked_by_users
@@ -317,7 +334,7 @@ async def liked_users_post_svc(db: Session, post_id: int) -> list[UserSchema]:
 
 # Commenting on the post
 async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: str):
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         return False, "invalid post_id"
 
@@ -328,10 +345,16 @@ async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: 
     # Create the comment
     comment = Comment(content=content, post_id=post_id, user_id=user_id)
     db.add(comment)
-    db.commit()
+    post.comments_count += 1
 
-    # Update comment count for the post
-    post.update_likes_and_comments_count(db)
+    # Add like activity
+    comment_activity = Activity(
+        username=post.author.username,
+        commented_post_id=post_id,
+        username_like=user.username,
+        liked_media=post.media,
+    )
+    db.add(comment_activity)
     db.commit()
 
     return True, "comment added"
