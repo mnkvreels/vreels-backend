@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -57,7 +57,14 @@ class CommentRequest(BaseModel):
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
 @router.post("/", response_model=Post, status_code=status.HTTP_201_CREATED)
-async def create_post(visibility: VisibilityEnum = Form(...), content: str = Form(...), file: UploadFile = Form(...), location: str = Form(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_post(
+    visibility: VisibilityEnum = Form(VisibilityEnum.public),
+    content: Optional[str] = Form(None),
+    file: UploadFile = Form(...),
+    location: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     user = current_user
     if not user:
         raise HTTPException(
@@ -194,9 +201,9 @@ async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends
 
 @router.get("/feed")
 async def get_random_posts(
-    page: int, limit: int, hashtag: str = None, db: Session = Depends(get_db)
+    page: int, limit: int, hashtag: str = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)
 ):
-    return await get_random_posts_svc(db, page, limit, hashtag)
+    return await get_random_posts_svc(current_user, db, page, limit, hashtag)
 
 
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
@@ -210,7 +217,7 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
         )
 
     post = await get_post_from_post_id_svc(db, request.post_id)
-    if post.author_id != user.id:
+    if post and post["author_id"] != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized to delete this post.",
@@ -221,14 +228,12 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
 
 @router.post("/like", status_code=status.HTTP_204_NO_CONTENT)
 async def like_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res, detail = await like_post_svc(db, request.post_id, current_user.username)
-    if res == False:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    res = await like_post_svc(db, request.post_id, current_user.username)
     # Get the post owner and notify them
     post = await get_post_from_post_id_svc(db, request.post_id)
-    if post.author_id != current_user.id:
+    if post and post["author_id"]!= current_user.id:
         await send_notification_to_user(db,
-            user_id=post.author_id,
+            user_id=post["author_id"],
             title="❤️ New Like on Your Post!",
             message=f"{current_user.username} liked your post."
         )
@@ -241,14 +246,14 @@ async def unlike_post(request: PostRequest, db: Session = Depends(get_db), curre
 
 
 @router.get("/postlikes")
-async def get_likes_for_post(request: PostRequest, db: Session = Depends(get_db)):
-    likes = await get_likes_for_post_svc(db, request.post_id)
+async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db)):
+    likes = await get_likes_for_post_svc(db, request.post_id, page, limit)
     if not likes:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No likes found")
     
     return likes
 
-
+ 
 @router.get("/", response_model=Post)
 async def get_post(request: PostRequest, db: Session = Depends(get_db)):
     db_post = await get_post_from_post_id_svc(db, request.post_id)
@@ -275,9 +280,9 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
     
     # Get the post owner and notify them
     post = await get_post_from_post_id_svc(db, request.post_id)
-    if post.author_id != current_user.id:
+    if post and post["author_id"] != current_user.id:
         await send_notification_to_user(db,
-            user_id=post.author_id,
+            user_id=post["author_id"],
             title="💬 New Comment on Your Post!",
             message=f"{current_user.username} commented: {request.content}"
         )
@@ -286,12 +291,18 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
 
 
 @router.get("/postcomments")
-async def get_comments_for_post(request: PostRequest, db: Session = Depends(get_db)):
-    comments = await get_comments_for_post_svc(db, request.post_id)
+async def get_comments_for_post(
+    page: int,
+    limit: int,
+    request: PostRequest, 
+    db: Session = Depends(get_db)
+):
+    comments = await get_comments_for_post_svc(db, request.post_id, page, limit)
     if not comments:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
     
     return comments
+
 
 # Get public posts
 @router.get("/public", response_model=List[Post])

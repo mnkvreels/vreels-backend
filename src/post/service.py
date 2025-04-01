@@ -1,5 +1,6 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import re
+import math
 from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
@@ -12,18 +13,21 @@ from sqlalchemy.exc import SQLAlchemyError
 # create hashtag from posts' content
 # hey #fun
 async def create_hashtags_svc(db: Session, post: Post):
-    regex = r"#\w+"
-    matches = re.findall(regex, post.content)
+    if post.content:
+        regex = r"#\w+"
+        matches = re.findall(regex, post.content)
 
-    for match in matches:
-        name = match[1:]
+        for match in matches:
+            name = match[1:]
 
-        hashtag = db.query(Hashtag).filter(Hashtag.name == name).first()
-        if not hashtag:
-            hashtag = Hashtag(name=name)
-            db.add(hashtag)
-            db.commit()
-        post.hashtags.append(hashtag)
+            hashtag = db.query(Hashtag).filter(Hashtag.name == name).first()
+            if not hashtag:
+                hashtag = Hashtag(name=name)
+                db.add(hashtag)
+                db.commit()
+            post.hashtags.append(hashtag)
+    else:
+        matches = []
 
 
 # create post
@@ -84,7 +88,7 @@ async def get_posts_from_hashtag_svc(db: Session, hashtag_name: str):
 # get random posts for feed
 # return latest posts of all users
 async def get_random_posts_svc(
-    db: Session, page: int, limit: int, hashtag: str = None
+    current_user: User, db: Session, page: int, limit: int, hashtag: str = None
 ):
     total_count = db.query(Post).count()
 
@@ -103,6 +107,21 @@ async def get_random_posts_svc(
     for post, username in posts:
         post_dict = post.__dict__
         post_dict["username"] = username
+        hashtags = (
+            db.query(Hashtag)
+            .join(post_hashtags)
+            .filter(post_hashtags.c.post_id == post.id)
+            .all()
+        )
+        post_dict["hashtags"] = [hashtag.name for hashtag in hashtags]
+        
+        liked_post = db.query(Like).filter(Like.user_id == current_user.id, Like.post_id == post.id).first()
+        post_dict["is_liked"] = liked_post is not None
+
+        # Check if the current user has saved the post
+        saved_post = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == current_user.id, UserSavedPosts.saved_post_id == post.id).first()
+        post_dict["is_saved"] = saved_post is not None
+        
         post.update_likes_and_comments_count(db)  # Update likes and comments count for each post
         result.append(post_dict)
 
@@ -116,29 +135,16 @@ async def get_random_posts_svc(
 
 
 # get post by post id
-async def get_post_from_post_id_svc(db: Session, post_id: int) -> PostSchema:
-    # Subquery for likes count
-    likes_count_subquery = (
-        db.query(func.count(Like.id))
-        .filter(Like.post_id == Post.id)
-        .correlate(Post)
-        .scalar_subquery()
-    )
+import math
 
-    # Subquery for comments count
-    comments_count_subquery = (
-        db.query(func.count(Comment.id))
-        .filter(Comment.post_id == Post.id)
-        .correlate(Post)
-        .scalar_subquery()
-    )
-
-    # Main query to get the post with counts
+async def get_post_from_post_id_svc(db: Session, post_id: int, page: int = 1, limit: int = 6) -> dict:
+    offset = (page - 1) * limit
+    
     post_query = (
-        db.query(
-            Post,
-            likes_count_subquery.label("likes_count"),
-            comments_count_subquery.label("comments_count"),
+        db.query(Post)
+        .options(
+            joinedload(Post.author),
+            joinedload(Post.hashtags),
         )
         .filter(Post.id == post_id)
         .first()
@@ -147,45 +153,127 @@ async def get_post_from_post_id_svc(db: Session, post_id: int) -> PostSchema:
     if not post_query:
         return None
 
-    # Unpack results
-    post, likes_count, comments_count = post_query
+    # Fetch total likes count and calculate pagination metadata for likes
+    total_likes_count = db.query(func.count(Like.id)).filter(Like.post_id == post_id).scalar()
+    total_likes_pages = max(1, math.ceil(total_likes_count / limit))
 
-    # Update likes and comments count
-    post.likes_count = likes_count
-    post.comments_count = comments_count
+    # Fetch paginated likes
+    likes_query = (
+        db.query(Like)
+        .options(joinedload(Like.user))
+        .filter(Like.post_id == post_id)
+        .order_by(desc(Like.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
 
-    return post
+    # Fetch total comments count and calculate pagination metadata for comments
+    total_comments_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post_id).scalar()
+    total_comments_pages = max(1, math.ceil(total_comments_count / limit))
+
+    # Fetch paginated comments
+    comments_query = (
+        db.query(Comment)
+        .options(joinedload(Comment.user))
+        .filter(Comment.post_id == post_id)
+        .order_by(desc(Comment.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    # Construct response with metadata
+    post_response = {
+        "id": post_query.id,
+        "content": post_query.content,
+        "media": post_query.media,
+        "location": post_query.location,
+        "visibility": post_query.visibility.value,
+        "author_id": post_query.author_id,
+        "likes_count": post_query.likes_count,
+        "comments_count": post_query.comments_count,
+        "created_at": post_query.created_at,
+        "hashtags": [{"id": tag.id, "name": tag.name} for tag in post_query.hashtags],
+        
+        # Likes metadata and list of likes
+        "likes": {
+            "metadata": {
+                "total_count": total_likes_count,
+                "total_pages": total_likes_pages,
+                "current_page": page,
+                "page": page,
+                "limit": limit
+            },
+            "items": [
+                {
+                    "user_id": like.user.id,
+                    "username": like.user.username,
+                    "profile_pic": like.user.profile_pic,
+                    "created_at": like.created_at
+                }
+                for like in likes_query
+            ]
+        },
+
+        # Comments metadata and list of comments
+        "comments": {
+            "metadata": {
+                "total_count": total_comments_count,
+                "total_pages": total_comments_pages,
+                "current_page": page,
+                "page": page,
+                "limit": limit
+            },
+            "items": [
+                {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "created_at": comment.created_at,
+                    "user_id": comment.user.id,
+                    "username": comment.user.username,
+                    "profile_pic": comment.user.profile_pic,
+                    "post_id": comment.post_id
+                }
+                for comment in comments_query
+            ]
+        }
+    }
+
+    return post_response
 
 
 # delete post svc
 async def delete_post_svc(db: Session, post_id: int):
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     db.delete(post)
     db.commit()
 
 
 # like post
 async def like_post_svc(db: Session, post_id: int, username: str):
-    post = await get_post_from_post_id_svc(db, post_id)
+    # Fetch the post object (not just a dictionary) from the database
+    post = db.query(Post).filter(Post.id == post_id).first()
+
     if not post:
-        return False, "Invalid post_id"
+        raise HTTPException(status_code=404, detail="Post not found")
 
+    # Fetch the user object using the username
     user = db.query(User).filter(User.username == username).first()
+
     if not user:
-        return False, "Invalid username"
+        raise HTTPException(status_code=404, detail="User not found")
 
-    # Check if like already exists in 'post_likes'
-    if user in post.liked_by_users:
-        return False, "Already liked"
+    # Check if the user has already liked the post
+    existing_like = db.query(Like).filter(Like.post_id == post_id, Like.user_id == user.id).first()
 
-    # Add entry to 'post_likes'
+    if existing_like:
+        return {"message": "You have already liked this post."}
+
+    # If not liked, add the like
     post.liked_by_users.append(user)
-
-    # Explicitly add a 'Like' entry in 'likes' table
-    like = Like(post_id=post.id, user_id=user.id)
-    db.add(like)
-
-    # Increment the likes_count
+    new_like = Like(post_id=post_id, user_id=user.id)
+    db.add(new_like)
     post.likes_count += 1
 
     # Add like activity
@@ -198,12 +286,12 @@ async def like_post_svc(db: Session, post_id: int, username: str):
     db.add(like_activity)
 
     db.commit()
-    return True, "Liked successfully"
+    return {"message": "Post liked successfully."}
 
 
 # unlike post
 async def unlike_post_svc(db: Session, post_id: int, username: str):
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         return False, "Invalid post_id"
 
@@ -236,7 +324,7 @@ async def unlike_post_svc(db: Session, post_id: int, username: str):
 
 # users who liked post
 async def liked_users_post_svc(db: Session, post_id: int) -> list[UserSchema]:
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         return []
     liked_users = post.liked_by_users
@@ -246,7 +334,7 @@ async def liked_users_post_svc(db: Session, post_id: int) -> list[UserSchema]:
 
 # Commenting on the post
 async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: str):
-    post = await get_post_from_post_id_svc(db, post_id)
+    post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         return False, "invalid post_id"
 
@@ -257,31 +345,91 @@ async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: 
     # Create the comment
     comment = Comment(content=content, post_id=post_id, user_id=user_id)
     db.add(comment)
-    db.commit()
+    post.comments_count += 1
 
-    # Update comment count for the post
-    post.update_likes_and_comments_count(db)
+    # Add like activity
+    comment_activity = Activity(
+        username=post.author.username,
+        commented_post_id=post_id,
+        username_like=user.username,
+        liked_media=post.media,
+    )
+    db.add(comment_activity)
     db.commit()
 
     return True, "comment added"
 
 
 # Get comments for a post
-async def get_comments_for_post_svc(db: Session, post_id: int):
-    post = await get_post_from_post_id_svc(db, post_id)
-    if not post:
-        return []
+async def get_comments_for_post_svc(db: Session, post_id: int, page: int, limit: int):
+    offset = (page - 1) * limit
 
-    comments = db.query(Comment).filter(Comment.post_id == post_id).all()
-    return comments
+    # Get total count of comments
+    total_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post_id).scalar()
+    total_pages = math.ceil(total_count / limit) if total_count > 0 else 1
 
-async def get_likes_for_post_svc(db: Session, post_id: int):
-    post = await get_post_from_post_id_svc(db, post_id)
-    if not post:
-        return []
+    # Get paginated comments
+    comments = (
+        db.query(Comment)
+        .options(joinedload(Comment.user))  # Load related User data
+        .filter(Comment.post_id == post_id)
+        .order_by(desc(Comment.created_at))  # Order by latest comments first
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
-    likes = db.query(Like).filter(Like.post_id == post_id).all()
-    return likes
+    return {
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "page": page,
+        "limit": limit,
+        "comments": [
+            {
+                "comment_id": comment.id,
+                "content": comment.content,
+                "user_id": comment.user.id,
+                "username": comment.user.username,
+                "profile_pic": comment.user.profile_pic,
+                "created_at": comment.created_at
+            }
+            for comment in comments
+        ]
+    }
+
+async def get_likes_for_post_svc(db: Session, post_id: int, page: int, limit: int):
+    offset = (page - 1) * limit
+
+    # Get total count of likes
+    total_count = db.query(func.count(Like.id)).filter(Like.post_id == post_id).scalar()
+    total_pages = math.ceil(total_count / limit) if total_count > 0 else 1
+
+    # Get paginated likes
+    likes = (
+        db.query(Like)
+        .options(joinedload(Like.user))  # Load related User data
+        .filter(Like.post_id == post_id)
+        .order_by(desc(Like.created_at))  # Order by latest likes first
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "page": page,
+        "limit": limit,
+        "likes": [
+            {
+                "user_id": like.user.id,
+                "username": like.user.username,
+                "profile_pic": like.user.profile_pic,
+                "created_at": like.created_at
+            }
+            for like in likes
+        ]
+    }
 
 async def save_post_svc(db: Session, user_id: int, post_id: int):
     # Check if post is already saved by user
