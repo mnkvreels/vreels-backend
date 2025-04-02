@@ -143,7 +143,7 @@ async def get_current_user(db: Session = Depends(get_db), token: str = Depends(o
         print(f"Token expires at: {datetime.fromtimestamp(expires)}")
 
         # Check if the token has expired
-        if datetime.fromtimestamp(expires) < datetime.now(timezone.utc):
+        if datetime.fromtimestamp(expires) < datetime.now():
             print("Token has expired!")  # Debugging line
             raise HTTPException(status_code=401, detail="Token has expired")
 
