@@ -235,7 +235,7 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
     await delete_post_svc(db, request.post_id)
 
 
-@router.post("/like", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/like", status_code=status.HTTP_200_OK)
 async def like_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     res = await like_post_svc(db, request.post_id, current_user.username)
     # Get the post owner and notify them
@@ -246,13 +246,14 @@ async def like_post(request: PostRequest, db: Session = Depends(get_db), current
             title="❤️ New Like on Your Post!",
             message=f"{current_user.username} liked your post."
         )
+    return {"message": "Liked the post"}
 
-@router.post("/unlike", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/unlike", status_code=status.HTTP_200_OK)
 async def unlike_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     res, detail = await unlike_post_svc(db, request.post_id, current_user.username)
     if res == False:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-
+    return {"message": "Unliked the post"}
 
 @router.get("/postlikes")
 async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db)):
