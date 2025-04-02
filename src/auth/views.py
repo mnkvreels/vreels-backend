@@ -98,6 +98,7 @@ async def update_profile(
     name: str = Form(None),
     bio: str = Form(None),
     dob: str = Form(None),
+    email: str = Form(None),
     gender: GenderEnum = Form(None),
     location: str = Form(None),
     account_type: AccountTypeEnum = Form(None),
@@ -110,6 +111,7 @@ async def update_profile(
         name=name,
         bio=bio,
         dob=dob,
+        email = email,
         gender=gender,
         location=location,
         account_type= account_type
