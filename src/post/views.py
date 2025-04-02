@@ -195,13 +195,13 @@ async def get_shared_posts(db: Session = Depends(get_db), current_user=Depends(g
 async def get_received_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return await get_received_posts_svc(db, current_user.id)
 
-@router.get("/hashtag/")
+@router.get("/hashtag")
 async def get_posts_from_hashtag(
     request: HashtagRequest,  # Request body
+    page: int,  
+    limit: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),  # Get current logged-in user
-    page: int = 1,  
-    limit: int = 10
 ):
     hashtag_name = request.hashtag  # Extract the hashtag name from the request body
     return await get_posts_from_hashtag_svc(current_user, db, page, limit, hashtag_name)
@@ -359,7 +359,7 @@ async def get_posts_by_visibility(visibility: VisibilityEnum, db: Session = Depe
     return posts
 
 #get following users posts
-@router.get("/following")
+@router.get("/followingposts")
 async def get_following_posts(
     page: int , limit: int , db: Session = Depends(get_db), user=Depends(get_current_user)
 ):
