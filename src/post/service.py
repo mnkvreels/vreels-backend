@@ -53,36 +53,137 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
 
 
 # get user's posts
-async def get_user_posts_svc(db: Session, user_id: int, page: int, limit: int) -> list[PostSchema]:
-    offset = (page - 1) * limit
+async def get_user_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
+    # Get the total count of posts for the given user
     total_count = db.query(Post).filter(Post.author_id == user_id).count()
+
+    # Calculate the offset for pagination
+    offset = (page - 1) * limit
+    if offset >= total_count:
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": [],
+        }
+
+    # Fetch posts and join the related tables dynamically
     posts = (
         db.query(Post)
+        .join(User, Post.author_id == User.id)
         .filter(Post.author_id == user_id)
         .order_by(desc(Post.created_at))
-        .offset(offset).limit(limit)
+        .offset(offset)
+        .limit(limit)
         .all()
     )
+
+    result = []
     for post in posts:
-        post.update_likes_and_comments_count(db)  # Update likes and comments count for each post
+        # Get dynamic attributes like 'username', 'hashtags', and check likes/saves
+        post_dict = post.__dict__.copy()  # Get all fields dynamically
+        
+        # Add dynamic relationships like 'username' (author) and 'hashtags'
+        post_dict["username"] = post.author.username if post.author else None
+        post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
+
+        # Update likes and comments count dynamically
+        post.update_likes_and_comments_count(db)
+
+        # Check if the user liked the post
+        post_dict["is_liked"] = db.query(Like).filter(Like.user_id == user_id, Like.post_id == post.id).first() is not None
+        
+        # Check if the user saved the post
+        post_dict["is_saved"] = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post.id).first() is not None
+
+        result.append(post_dict)
+
+    # Return the final paginated result
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": result,
+    }
+
+
+
+# get posts from a hashtag
+async def get_posts_from_hashtag_svc(
+    current_user: User, db: Session, page: int, limit: int, hashtag_name: str
+):
+    # Get the hashtag
+    hashtag = db.query(Hashtag).filter_by(name=hashtag_name).first()
+    if not hashtag:
+        return {"total_count": 0, "page": page, "limit": limit, "total_pages": 0, "data": []}
+
+    # Get total count of posts with the given hashtag
+    total_count = (
+        db.query(Post).join(post_hashtags).filter(Hashtag.name == hashtag_name).count()
+    )
+
+    # Calculate offset for pagination
+    offset = (page - 1) * limit
+    if offset >= total_count:
+        return {"total_count": total_count, "page": page, "limit": limit, "total_pages": (total_count + limit - 1) // limit, "data": []}
+
+    # Query posts with the hashtag
+    posts = (
+        db.query(Post)
+        .join(post_hashtags)
+        .join(Hashtag)
+        .filter(Hashtag.name == hashtag_name)
+        .order_by(Post.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for post in posts:
+        post_dict = post.__dict__.copy()
+
+        # Get username of the user who created the post
+        username = db.query(User.username).filter(User.id == post.author_id).scalar()
+        post_dict["username"] = username if username else "Unknown"
+
+        # Get hashtags for the post
+        hashtags = (
+            db.query(Hashtag)
+            .join(post_hashtags)
+            .filter(post_hashtags.c.post_id == post.id)
+            .all()
+        )
+        post_dict["hashtags"] = [hashtag.name for hashtag in hashtags]
+
+        # Check if the current user has liked the post
+        liked_post = db.query(Like).filter(
+            Like.user_id == current_user.id, Like.post_id == post.id
+        ).first()
+        post_dict["is_liked"] = liked_post is not None
+
+        # Check if the current user has saved the post
+        saved_post = db.query(UserSavedPosts).filter(
+            UserSavedPosts.user_id == current_user.id,
+            UserSavedPosts.saved_post_id == post.id,
+        ).first()
+        post_dict["is_saved"] = saved_post is not None
+
+        # Update likes and comments count
+        post.update_likes_and_comments_count(db)
+
+        result.append(post_dict)
+
     return {
         "total_count": total_count,
         "page": page,
         "limit": limit,
         "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
-        "data": posts
+        "data": result,
     }
 
-
-# get posts from a hashtag
-async def get_posts_from_hashtag_svc(db: Session, hashtag_name: str):
-    hashtag = db.query(Hashtag).filter_by(name=hashtag_name).first()
-    if not hashtag:
-        return None
-    posts = hashtag.posts
-    for post in posts:
-        post.update_likes_and_comments_count(db)  # Update likes and comments count for each post
-    return posts
 
 
 # get random posts for feed
@@ -637,3 +738,53 @@ async def get_posts_by_visibility_svc(db: Session, user_id: int, visibility: str
     except SQLAlchemyError as e:
         print(f"Database error: {e}")
         return None
+
+async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: int):
+    total_count = (
+        db.query(Post)
+        .join(Follow, Follow.following_id == Post.author_id)
+        .filter(Follow.follower_id == user_id)
+        .count()
+    )
+
+    offset = (page - 1) * limit
+    if offset >= total_count:
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": [],
+        }
+
+    posts = (
+        db.query(Post, User.username)
+        .join(User, Post.author_id == User.id)
+        .join(Follow, Follow.following_id == Post.author_id)
+        .filter(Follow.follower_id == user_id)
+        .order_by(desc(Post.created_at))
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for post, username in posts:
+        post_dict = post.__dict__.copy()  # Get all fields dynamically
+        post_dict["username"] = username
+        post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
+
+        # Compute dynamic flags
+        post_dict["is_liked"] = db.query(Like).filter(Like.user_id == user_id, Like.post_id == post.id).first() is not None
+        post_dict["is_saved"] = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id== post.id).first() is not None
+
+        result.append(post_dict)
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": result,
+    }  
+    

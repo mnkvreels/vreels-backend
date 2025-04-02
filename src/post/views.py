@@ -29,7 +29,8 @@ from .service import (
     get_public_posts_svc,
     get_private_posts_svc,
     get_friends_posts_svc,
-    get_posts_by_visibility_svc
+    get_posts_by_visibility_svc,
+    get_following_posts_svc
 )
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username
@@ -194,9 +195,17 @@ async def get_shared_posts(db: Session = Depends(get_db), current_user=Depends(g
 async def get_received_posts(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return await get_received_posts_svc(db, current_user.id)
 
-@router.get("/hashtag/")
-async def get_posts_from_hashtag(request: HashtagRequest , db: Session = Depends(get_db)):
-    return await get_posts_from_hashtag_svc(db, request.hashtag)
+@router.get("/hashtag")
+async def get_posts_from_hashtag(
+    request: HashtagRequest,  # Request body
+    page: int,  
+    limit: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # Get current logged-in user
+):
+    hashtag_name = request.hashtag  # Extract the hashtag name from the request body
+    return await get_posts_from_hashtag_svc(current_user, db, page, limit, hashtag_name)
+
 
 
 @router.get("/feed")
@@ -348,3 +357,10 @@ async def get_posts_by_visibility(visibility: VisibilityEnum, db: Session = Depe
         )
 
     return posts
+
+#get following users posts
+@router.get("/followingposts")
+async def get_following_posts(
+    page: int , limit: int , db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+    return await get_following_posts_svc(db, user.id, page, limit)
