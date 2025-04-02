@@ -6,6 +6,7 @@ from src.models.user import User, OTP
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest
 from src.database import get_db
 from datetime import timedelta, datetime, timezone
+from .enums import AccountTypeEnum, GenderEnum
 from ..azure_blob import upload_to_azure_blob
 
 from src.auth.service import (
@@ -97,8 +98,9 @@ async def update_profile(
     name: str = Form(None),
     bio: str = Form(None),
     dob: str = Form(None),
-    gender: str = Form(None),
+    gender: GenderEnum = Form(None),
     location: str = Form(None),
+    account_type: AccountTypeEnum = Form(None),
     profile_pic: UploadFile = File(None),  # Accept profile picture
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -110,6 +112,7 @@ async def update_profile(
         dob=dob,
         gender=gender,
         location=location,
+        account_type= account_type
     )
 
     # Check if a new profile pic is uploaded

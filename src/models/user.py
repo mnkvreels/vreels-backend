@@ -2,7 +2,7 @@ from sqlalchemy import VARCHAR, Column, Date, DateTime, Integer, String, Boolean
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship, backref
 from src.database import Base
-from src.auth.enums import GenderEnum
+from src.auth.enums import GenderEnum, AccountTypeEnum
 
 class Follow(Base):
     """
@@ -35,7 +35,7 @@ class User(Base):
     # New fields for push notifications
     device_token = Column(String, nullable=True)  # Device token for push notifications
     platform = Column(String(50), nullable=True)  # Platform: iOS or Android
-
+    account_type = Column(Enum(AccountTypeEnum), default=AccountTypeEnum.PUBLIC, nullable=False)
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
