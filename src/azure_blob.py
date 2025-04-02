@@ -1,5 +1,5 @@
 from azure.storage.blob import BlobServiceClient
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from fastapi import UploadFile
 import uuid
@@ -17,7 +17,7 @@ IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"}
 
 async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) -> str:
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     year, month, day = now.strftime("%Y"), now.strftime("%m"), now.strftime("%d")
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
     
