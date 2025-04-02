@@ -30,7 +30,7 @@ async def profile(request: UserRequest, db: Session = Depends(get_db)):
     return db_user
 
 
-@router.post("/follow", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/follow", status_code=status.HTTP_200_OK)
 async def follow(request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_user = current_user
     if not db_user:
@@ -56,7 +56,7 @@ async def follow(request: UserRequest, db: Session = Depends(get_db), current_us
         return {"message": "Followed successfully!"}
 
 
-@router.post("/unfollow", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/unfollow", status_code=status.HTTP_200_OK)
 async def follow(request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_user = current_user
     if not db_user:
@@ -69,6 +69,8 @@ async def follow(request: UserRequest, db: Session = Depends(get_db), current_us
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="could not follow"
         )
+    elif res:
+        return {"message": "Unfollowed successfully!"}
 
 
 @router.get("/followers", response_model=FollowersList)
