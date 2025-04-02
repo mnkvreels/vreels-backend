@@ -5,6 +5,10 @@ class GenderEnum(str, Enum):
     MALE = "male"
     FEMALE = "female"
 
+class AccountTypeEnum(str, Enum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+
 # Enum to hold the email pattern
 class EmailPattern(Enum):
     EMAIL_REGEX = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"

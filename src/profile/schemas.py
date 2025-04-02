@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-
+from ..auth.enums import AccountTypeEnum
 from ..auth.schemas import UserBase
 
 
@@ -8,6 +8,7 @@ class Profile(UserBase):
     id: Optional[int] = None
     name: Optional[str] = None
     bio: Optional[str] = None
+    account_type: Optional[AccountTypeEnum] = None
     followers_count: Optional[int] = 0
     following_count: Optional[int] = 0
 
