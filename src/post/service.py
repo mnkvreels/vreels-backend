@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, aliased
 import re
 import math
 from sqlalchemy import desc, func, select
@@ -197,16 +197,31 @@ async def get_random_posts_svc(
     if offset >= total_count:
         return []
 
-    posts = db.query(Post, User.username).join(User).order_by(desc(Post.created_at))
+    # Alias for Follow table
+    FollowerAlias = aliased(Follow)
+
+    posts_query = (
+        db.query(Post, User.username)
+        .join(User, Post.author_id == User.id)
+        .outerjoin(FollowerAlias, (FollowerAlias.following_id == Post.author_id) & (FollowerAlias.follower_id == current_user.id))  # Check if user follows the author
+        .order_by(desc(Post.created_at))
+    )
 
     if hashtag:
-        posts = posts.join(post_hashtags).join(Hashtag).filter(Hashtag.name == hashtag)
+        posts_query = posts_query.join(post_hashtags).join(Hashtag).filter(Hashtag.name == hashtag)
 
-    posts = posts.offset(offset).limit(limit).all()
+    # Apply visibility filters
+    posts_query = posts_query.filter(
+        (Post.visibility != "private") | (Post.author_id == current_user.id)  # Include private only if it's the user's post
+    ).filter(
+        (Post.visibility != "friends") | (FollowerAlias.follower_id != None)  # Include friends only if the user follows the author
+    )
+
+    posts = posts_query.offset(offset).limit(limit).all()
 
     result = []
     for post, username in posts:
-        post_dict = post.__dict__
+        post_dict = post.__dict__.copy()
         post_dict["username"] = username
         hashtags = (
             db.query(Hashtag)
@@ -744,6 +759,7 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         db.query(Post)
         .join(Follow, Follow.following_id == Post.author_id)
         .filter(Follow.follower_id == user_id)
+        .filter((Post.visibility != "private") | (Post.author_id == user_id))  # Exclude private unless it's the user's post
         .count()
     )
 
@@ -762,6 +778,7 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         .join(User, Post.author_id == User.id)
         .join(Follow, Follow.following_id == Post.author_id)
         .filter(Follow.follower_id == user_id)
+        .filter((Post.visibility != "private") | (Post.author_id == user_id))  # Exclude private unless it's the user's post
         .order_by(desc(Post.created_at))
         .offset(offset)
         .limit(limit)
