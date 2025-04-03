@@ -7,6 +7,7 @@ from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, S
 from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like
 from ..models.user import User, Follow
 from ..auth.schemas import User as UserSchema
+from ..models.post import VisibilityEnum
 from ..models.activity import Activity
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -804,4 +805,51 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         "total_pages": (total_count + limit - 1) // limit,
         "data": result,
     }  
+
+async def search_hashtags_svc(query: str, db: Session):
+    hashtags = (
+        db.query(
+            Hashtag.name, 
+            func.count(post_hashtags.c.post_id).label("post_count")
+        )
+        .join(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)
+        .join(Post, Post.id == post_hashtags.c.post_id)
+        .filter(Hashtag.name.ilike(f"%{query}%"))  # Case-insensitive search
+        .filter(Post.visibility == VisibilityEnum.public)  # Only count public posts
+        .group_by(Hashtag.name)
+        .order_by(func.count(post_hashtags.c.post_id).desc())  # Sort by post count
+        .all()
+    )
+
+    return [
+        {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
+    ]  
     
+async def search_users_svc(query: str, db: Session):
+    users = (
+        db.query(
+            User.id,
+            User.username,
+            User.profile_pic,
+            User.name,
+            User.bio,
+            func.count(Follow.follower_id).label("followers_count")
+        )
+        .outerjoin(Follow, Follow.following_id == User.id)  # Get follower count
+        .filter(User.username.ilike(f"%{query}%"))  # Case-insensitive search
+        .group_by(User.id, User.username, User.profile_pic, User.name, User.bio)
+        .order_by(func.count(Follow.follower_id).desc())  # Sort by followers count
+        .all()
+    )
+
+    return [
+        {
+            "user_id": user.id,
+            "username": user.username,
+            "profile_pic": user.profile_pic,
+            "name": user.name,
+            "bio": user.bio,
+            "followers_count": user.followers_count
+        }
+        for user in users
+    ]

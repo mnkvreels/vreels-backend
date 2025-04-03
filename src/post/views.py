@@ -30,7 +30,9 @@ from .service import (
     get_private_posts_svc,
     get_friends_posts_svc,
     get_posts_by_visibility_svc,
-    get_following_posts_svc
+    get_following_posts_svc,
+    search_hashtags_svc,
+    search_users_svc
 )
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username
@@ -365,3 +367,11 @@ async def get_following_posts(
     page: int , limit: int , db: Session = Depends(get_db), user=Depends(get_current_user)
 ):
     return await get_following_posts_svc(db, user.id, page, limit)
+
+@router.get("/search/hashtags")
+async def search_hashtags(query: str, db: Session = Depends(get_db)):
+    return await search_hashtags_svc(query, db)
+
+@router.get("/search/users")
+async def search_users(query: str, db: Session = Depends(get_db)):
+    return await search_users_svc(query, db)
