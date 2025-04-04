@@ -32,9 +32,6 @@ class User(Base):
     bio = Column(String(255))
     email = Column(String(255), unique=True)
     location = Column(String(255))
-    # New fields for push notifications
-    device_token = Column(String, nullable=True)  # Device token for push notifications
-    platform = Column(String(50), nullable=True)  # Platform: iOS or Android
     account_type = Column(Enum(AccountTypeEnum), default=AccountTypeEnum.PUBLIC, nullable=False)
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
@@ -80,6 +77,7 @@ class UserDevice(Base):
     device_id = Column(String(255), unique=True)  # Unique identifier for each device
     device_token = Column(String(255), nullable=False)  # Device token for push notifications
     platform = Column(String(50), nullable=False)  # Platform: iOS or Android
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="devices")
 

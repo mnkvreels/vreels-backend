@@ -3,7 +3,7 @@ from jwt import PyJWKClient
 import requests
 import json
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import BigInteger, and_
+from sqlalchemy import BigInteger, and_, desc
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
@@ -286,14 +286,34 @@ async def get_blocked_users_svc(db: Session, user_id: int):
     return blocked_users
 
 async def send_notification_to_user(db: Session, user_id: int, title: str, message: str):
+    # Fetch the user and the associated device data
     user = await get_user_from_user_id(db, user_id)
-    if user and user.device_token:
-        await send_push_notification(
-            device_token=user.device_token,
-            platform=user.platform,
-            title=title,
-            message=message
-        )
+    
+    if user:
+        # Get the device information from the UserDevice table
+        user_device = db.query(UserDevice).filter(UserDevice.user_id == user_id).order_by(desc(UserDevice.created_at)).first()
+        
+        if user_device:
+            # Now we have the device token and platform from the user_device table
+            device_token = user_device.device_token
+            platform = user_device.platform
+            
+            # Send the notification if both device_token and platform are available
+            if device_token and platform:
+                await send_push_notification(
+                    device_token=device_token,
+                    platform=platform,
+                    title=title,
+                    message=message
+                )
+            else:
+                # Handle cases where device_token or platform is missing
+                print(f"Device token or platform missing for user_id {user_id}")
+        else:
+            # Handle case where no device exists for the user
+            print(f"No device found for user_id {user_id}")
+    else:
+        print(f"User not found with user_id {user_id}")
 
 # OTP Generation function
 async def generate_otp(otp_length=6):

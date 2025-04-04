@@ -11,9 +11,8 @@ from .service import (
     check_follow_svc,
     existing_user,
 )
-from ..auth.service import get_current_user, get_user_by_username
+from ..auth.service import get_current_user, get_user_by_username, send_notification_to_user
 from ..models import User
-from ..notification_service import send_push_notification
 
 class UserRequest(BaseModel):
     username: str
@@ -47,9 +46,9 @@ async def follow(request: UserRequest, db: Session = Depends(get_db), current_us
         followed_user = await get_user_by_username(db, request.username)
         
         # Send notification to followed user
-        await send_push_notification(
-            device_token=followed_user.device_token,
-            platform=followed_user.platform,
+        await send_notification_to_user(
+            db,
+            user_id=followed_user.id,
             title="👥 New Follower!",
             message=f"{current_user.username} is now following you."
         )
