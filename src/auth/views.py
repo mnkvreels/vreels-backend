@@ -24,7 +24,8 @@ from src.auth.service import (
     authenticateUserID,
     otp_function,
     send_sms,
-    delete_account_svc
+    delete_account_svc,
+    update_device_token_svc
 )
 from ..config import Settings
 
@@ -65,15 +66,10 @@ async def update_device_token(request: DeviceTokenRequest, db: Session = Depends
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-    # Update device token and platform
-    user.device_token = request.device_token
-    user.platform = request.platform.lower()
-
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    return {"message": "Device token updated successfully!"}
+    # Call the service layer to update or add the device token
+    result = update_device_token_svc(user.id, request.device_id, request.device_token, request.platform, db)
+    
+    return result
 
 @router.get("/profile", status_code=status.HTTP_200_OK, response_model=UserSchema)
 async def profile(current_user: User = Depends(get_current_user)):

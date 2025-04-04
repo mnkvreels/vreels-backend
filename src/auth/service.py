@@ -2,7 +2,7 @@ from os import stat
 from jwt import PyJWKClient
 import requests
 import json
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import BigInteger, and_
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
@@ -10,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
 from src.database import get_db
-from ..models.user import User, BlockedUsers, OTP, Follow
+from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice
 from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags
 from ..models.activity import Activity
 from .schemas import UserCreate, UserUpdate
@@ -435,4 +435,31 @@ async def delete_account_svc(db: Session, user_id: int) -> bool:
 
     return True
 
+def update_device_token_svc(user_id: int, device_id: str, device_token: str, platform: str, db: Session):
+    # Check if the device already exists for the user
+    existing_device = db.query(UserDevice).filter(UserDevice.user_id == user_id, UserDevice.device_id == device_id).first()
 
+    if existing_device:
+        # Update the existing device record
+        existing_device.device_token = device_token
+        existing_device.platform = platform.lower()
+        db.commit()
+        db.refresh(existing_device)
+        return {"message": "Device token updated successfully!"}
+    else:
+        # Add a new device record
+        new_device = UserDevice(
+            user_id=user_id,
+            device_id=device_id,
+            device_token=device_token,
+            platform=platform.lower()
+        )
+        db.add(new_device)
+
+    try:
+        db.commit()  # Commit the changes to the database
+        db.refresh(new_device)  # Refresh the session for the new device
+        return {"message": "Device added successfully!"}
+    except Exception as e:
+        db.rollback()  # Rollback in case of an error
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update device token")
