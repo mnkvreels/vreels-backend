@@ -38,7 +38,6 @@ from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username
 from ..auth.schemas import User
 from ..azure_blob import upload_to_azure_blob
-from ..notification_service import send_push_notification
 from ..models.post import VisibilityEnum
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -91,14 +90,12 @@ async def create_post(
     # for follow in followers:
     #     # follower_username = follow['username']
     #     follower_user = await get_user_by_username(db, follow.username)
-    #     device_token = follower_user.device_token
-    #     platform = follower_user.platform
 
     #     # Send push notification
     #     try:
-    #         await send_push_notification(
-    #         device_token=device_token,
-    #         platform=platform,
+    #         await send_notification_to_user(
+    #         db, 
+    #         user_id: follower_user.id
     #         title=f"New Post from {current_user.username}",
     #         message=f"{current_user.username} has posted a new update! Check it out!"
     #     )

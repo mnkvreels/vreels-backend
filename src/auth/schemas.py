@@ -76,5 +76,6 @@ class UserIdRequest(BaseModel):
     user_id: int
     
 class DeviceTokenRequest(BaseModel):
+    device_id: str
     device_token: str
     platform: str  # iOS or Android

@@ -32,9 +32,6 @@ class User(Base):
     bio = Column(String(255))
     email = Column(String(255), unique=True)
     location = Column(String(255))
-    # New fields for push notifications
-    device_token = Column(String, nullable=True)  # Device token for push notifications
-    platform = Column(String(50), nullable=True)  # Platform: iOS or Android
     account_type = Column(Enum(AccountTypeEnum), default=AccountTypeEnum.PUBLIC, nullable=False)
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
@@ -54,6 +51,7 @@ class User(Base):
 
     # Relationship for received shares (user who receives the shared post)
     shared_posts_received = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.receiver_user_id]", back_populates="receiver", cascade="all, delete")
+    devices = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan")
 
 class BlockedUsers(Base):
     __tablename__ = "blocked_users"
@@ -70,3 +68,18 @@ class OTP(Base):
     user_id = Column(Integer, index=True)
     otp = Column(VARCHAR(255))
     created_at = Column(DateTime, default=datetime.now(timezone.utc)) 
+
+class UserDevice(Base):
+    __tablename__ = "user_devices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    device_id = Column(String(255), unique=True)  # Unique identifier for each device
+    device_token = Column(String(255), nullable=False)  # Device token for push notifications
+    platform = Column(String(50), nullable=False)  # Platform: iOS or Android
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="devices")
+
+    def __repr__(self):
+        return f"<UserDevice(user_id={self.user_id}, device_id={self.device_id}, platform={self.platform})>"
