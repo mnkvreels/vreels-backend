@@ -347,13 +347,6 @@ async def send_sms(mobile, otp):
         from_number = "+18338432200"  # Replace with your ACS purchased phone number
         to_number = f"+{mobile}"  # Ensure the mobile number is in E.164 format
 
-        # Define the SMS message
-        message = sms_client.send(
-            from_=from_number,
-            to=[to_number],
-            message=f"Hello your log in OTP is {otp}, please do not share with anyone.-Vreels"
-        )
-
         # Send the SMS via Azure Communication Services
         try:
             response = sms_client.send(
