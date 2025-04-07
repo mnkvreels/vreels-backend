@@ -2,6 +2,7 @@ from os import stat
 from jwt import PyJWKClient
 import requests
 import json
+from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import BigInteger, and_, desc
 from sqlalchemy.orm import Session
@@ -476,3 +477,9 @@ def update_device_token_svc(user_id: int, device_id: str, device_token: str, pla
     except Exception as e:
         db.rollback()  # Rollback in case of an error
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update device token")
+
+async def optional_current_user(request: Request) -> Optional[User]:
+    try:
+        return await get_current_user(request)
+    except:
+        return None

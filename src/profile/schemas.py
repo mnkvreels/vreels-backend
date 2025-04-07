@@ -8,6 +8,7 @@ class Profile(UserBase):
     id: Optional[int] = None
     name: Optional[str] = None
     bio: Optional[str] = None
+    profile_pic: Optional[str] = None
     account_type: Optional[AccountTypeEnum] = None
     followers_count: Optional[int] = 0
     following_count: Optional[int] = 0
