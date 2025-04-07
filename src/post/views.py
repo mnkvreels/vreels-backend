@@ -35,7 +35,7 @@ from .service import (
     search_users_svc
 )
 from ..profile.service import get_followers_svc
-from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username
+from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username, optional_current_user
 from ..auth.schemas import User
 from ..azure_blob import upload_to_azure_blob
 from ..models.post import VisibilityEnum
@@ -111,21 +111,23 @@ async def get_current_user_posts(page: int, limit: int, db: Session = Depends(ge
     user = current_user
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
         )
-    posts = await get_user_posts_svc(db, user.id, page, limit)
+    posts = await get_user_posts_svc(db, user.id, current_user, page, limit)
     return posts
 
 
 @router.get("/userposts")
-async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db)):
+async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db), current_user: Optional[User] =Depends(optional_current_user)):
     # verify token
     user = await existing_user(db, request.username)
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
         )
-    posts = await get_user_posts_svc(db, user.id, page, limit)
+    posts = await get_user_posts_svc(db, user.id, current_user, page, limit)
     return posts
 
 @router.post("/savepost", status_code=status.HTTP_201_CREATED)
@@ -224,7 +226,7 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
             detail="You are not authorized to delete this post.",
         )
 
-    post = await get_post_from_post_id_svc(db, request.post_id)
+    post = await get_post_from_post_id_svc(db, user, request.post_id)
     if post and post["author_id"] != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -238,7 +240,7 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
 async def like_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     res = await like_post_svc(db, request.post_id, current_user.username)
     # Get the post owner and notify them
-    post = await get_post_from_post_id_svc(db, request.post_id)
+    post = await get_post_from_post_id_svc(db, current_user, request.post_id)
     if post and post["author_id"]!= current_user.id:
         await send_notification_to_user(db,
             user_id=post["author_id"],
@@ -261,11 +263,10 @@ async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Se
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No likes found")
     
     return likes
-
  
-@router.get("/", response_model=Post)
-async def get_post(request: PostRequest, db: Session = Depends(get_db)):
-    db_post = await get_post_from_post_id_svc(db, request.post_id)
+@router.get("/", status_code=status.HTTP_200_OK)
+async def get_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_post = await get_post_from_post_id_svc(db, current_user, request.post_id)
     if not db_post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Invalid post id"
@@ -288,7 +289,7 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     
     # Get the post owner and notify them
-    post = await get_post_from_post_id_svc(db, request.post_id)
+    post = await get_post_from_post_id_svc(db, user, request.post_id)
     if post and post["author_id"] != current_user.id:
         await send_notification_to_user(db,
             user_id=post["author_id"],
@@ -314,7 +315,7 @@ async def get_comments_for_post(
 
 
 # Get public posts
-@router.get("/public", response_model=List[Post])
+@router.get("/public", status_code=status.HTTP_200_OK)
 async def get_public_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     posts = await get_public_posts_svc(db,current_user.id)
     if not posts:
@@ -324,7 +325,7 @@ async def get_public_posts(db: Session = Depends(get_db),current_user: User = De
     return posts
 
 # Get private posts (only visible to uuser)
-@router.get("/private", response_model=List[Post])
+@router.get("/private", status_code=status.HTTP_200_OK)
 async def get_private_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     posts = await get_private_posts_svc(db, current_user.id)
     if not posts:
@@ -334,7 +335,7 @@ async def get_private_posts(db: Session = Depends(get_db),current_user: User = D
     return posts
 
 # get visible only to friends posts
-@router.get("/friends", response_model=List[Post])
+@router.get("/friends", status_code=status.HTTP_200_OK)
 async def get_friends_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     posts = await get_friends_posts_svc(db, current_user.id)
 
@@ -346,7 +347,7 @@ async def get_friends_posts(db: Session = Depends(get_db),current_user: User = D
     return posts
 
 # get posts by visibility
-@router.get("/posts", response_model=List[Post])
+@router.get("/posts", status_code=status.HTTP_200_OK)
 async def get_posts_by_visibility(visibility: VisibilityEnum, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     posts = await get_posts_by_visibility_svc(db, current_user.id, visibility)
 
@@ -370,5 +371,5 @@ async def search_hashtags(query: str, db: Session = Depends(get_db)):
     return await search_hashtags_svc(query, db)
 
 @router.get("/search/users")
-async def search_users(query: str, db: Session = Depends(get_db)):
-    return await search_users_svc(query, db)
+async def search_users(query: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await search_users_svc(query, db, current_user)

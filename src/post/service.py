@@ -54,7 +54,7 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
 
 
 # get user's posts
-async def get_user_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
+async def get_user_posts_svc(db: Session, user_id: int, current_user: User, page: int, limit: int) -> dict:
     # Get the total count of posts for the given user
     total_count = db.query(Post).filter(Post.author_id == user_id).count()
 
@@ -69,11 +69,32 @@ async def get_user_posts_svc(db: Session, user_id: int, page: int, limit: int) -
             "data": [],
         }
 
-    # Fetch posts and join the related tables dynamically
-    posts = (
+    # Base query
+    posts_query = (
         db.query(Post)
         .join(User, Post.author_id == User.id)
         .filter(Post.author_id == user_id)
+    )
+
+    # Apply visibility filters if current_user is not the same as the user_id
+    if current_user and current_user.id != user_id:
+        # Check if current_user is following the post owner
+        is_following = db.query(Follow).filter(
+            Follow.follower_id == current_user.id,
+            Follow.following_id == user_id
+        ).first() is not None
+
+        posts_query = posts_query.filter(Post.visibility != "private")
+
+        if not is_following:
+            posts_query = posts_query.filter(Post.visibility != "friends")
+
+    # Count total after filtering
+    total_count = posts_query.count()
+
+    # Fetch posts with pagination
+    posts = (
+        posts_query
         .order_by(desc(Post.created_at))
         .offset(offset)
         .limit(limit)
@@ -115,27 +136,45 @@ async def get_user_posts_svc(db: Session, user_id: int, page: int, limit: int) -
 async def get_posts_from_hashtag_svc(
     current_user: User, db: Session, page: int, limit: int, hashtag_name: str
 ):
-    # Get the hashtag
     hashtag = db.query(Hashtag).filter_by(name=hashtag_name).first()
     if not hashtag:
         return {"total_count": 0, "page": page, "limit": limit, "total_pages": 0, "data": []}
 
-    # Get total count of posts with the given hashtag
-    total_count = (
-        db.query(Post).join(post_hashtags).filter(Hashtag.name == hashtag_name).count()
-    )
-
-    # Calculate offset for pagination
     offset = (page - 1) * limit
-    if offset >= total_count:
-        return {"total_count": total_count, "page": page, "limit": limit, "total_pages": (total_count + limit - 1) // limit, "data": []}
 
-    # Query posts with the hashtag
-    posts = (
+    # Alias for follow relation to check "friends-only" visibility
+    FollowerAlias = aliased(Follow)
+
+    base_query = (
         db.query(Post)
         .join(post_hashtags)
         .join(Hashtag)
         .filter(Hashtag.name == hashtag_name)
+        .join(User, Post.author_id == User.id)
+        .outerjoin(
+            FollowerAlias,
+            (FollowerAlias.following_id == Post.author_id) & (FollowerAlias.follower_id == current_user.id)
+        )
+        .filter(
+            (Post.visibility == "public") |
+            ((Post.visibility == "friends") & (FollowerAlias.follower_id != None)) |
+            ((Post.visibility == "private") & (Post.author_id == current_user.id))
+        )
+    )
+
+    total_count = base_query.count()
+
+    if offset >= total_count:
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": [],
+        }
+
+    posts = (
+        base_query
         .order_by(Post.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -146,33 +185,18 @@ async def get_posts_from_hashtag_svc(
     for post in posts:
         post_dict = post.__dict__.copy()
 
-        # Get username of the user who created the post
-        username = db.query(User.username).filter(User.id == post.author_id).scalar()
-        post_dict["username"] = username if username else "Unknown"
+        post_dict["username"] = post.author.username if post.author else "Unknown"
+        post_dict["hashtags"] = [tag.name for tag in post.hashtags] if post.hashtags else []
 
-        # Get hashtags for the post
-        hashtags = (
-            db.query(Hashtag)
-            .join(post_hashtags)
-            .filter(post_hashtags.c.post_id == post.id)
-            .all()
-        )
-        post_dict["hashtags"] = [hashtag.name for hashtag in hashtags]
-
-        # Check if the current user has liked the post
-        liked_post = db.query(Like).filter(
+        post_dict["is_liked"] = db.query(Like).filter(
             Like.user_id == current_user.id, Like.post_id == post.id
-        ).first()
-        post_dict["is_liked"] = liked_post is not None
+        ).first() is not None
 
-        # Check if the current user has saved the post
-        saved_post = db.query(UserSavedPosts).filter(
+        post_dict["is_saved"] = db.query(UserSavedPosts).filter(
             UserSavedPosts.user_id == current_user.id,
             UserSavedPosts.saved_post_id == post.id,
-        ).first()
-        post_dict["is_saved"] = saved_post is not None
+        ).first() is not None
 
-        # Update likes and comments count
         post.update_likes_and_comments_count(db)
 
         result.append(post_dict)
@@ -181,10 +205,9 @@ async def get_posts_from_hashtag_svc(
         "total_count": total_count,
         "page": page,
         "limit": limit,
-        "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
+        "total_pages": (total_count + limit - 1) // limit,
         "data": result,
     }
-
 
 
 # get random posts for feed
@@ -254,7 +277,7 @@ async def get_random_posts_svc(
 # get post by post id
 import math
 
-async def get_post_from_post_id_svc(db: Session, post_id: int, page: int = 1, limit: int = 6) -> dict:
+async def get_post_from_post_id_svc(db: Session, current_user: User, post_id: int, page: int = 1, limit: int = 6) -> dict:
     offset = (page - 1) * limit
     
     post_query = (
@@ -299,6 +322,13 @@ async def get_post_from_post_id_svc(db: Session, post_id: int, page: int = 1, li
         .offset(offset)
         .all()
     )
+    
+    # Determine is_liked and is_saved for the current user
+    is_liked = False
+    is_saved = False
+    if current_user:
+        is_liked = db.query(Like).filter(Like.user_id == current_user.id, Like.post_id == post_id).first() is not None
+        is_saved = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == current_user.id, UserSavedPosts.saved_post_id == post_id).first() is not None
 
     # Construct response with metadata
     post_response = {
@@ -311,7 +341,9 @@ async def get_post_from_post_id_svc(db: Session, post_id: int, page: int = 1, li
         "likes_count": post_query.likes_count,
         "comments_count": post_query.comments_count,
         "created_at": post_query.created_at,
-        "hashtags": [{"id": tag.id, "name": tag.name} for tag in post_query.hashtags],
+        "hashtags": [tag.name for tag in post_query.hashtags],
+        "is_liked": is_liked,
+        "is_saved": is_saved,
         
         # Likes metadata and list of likes
         "likes": {
@@ -825,7 +857,7 @@ async def search_hashtags_svc(query: str, db: Session):
         {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
     ]  
     
-async def search_users_svc(query: str, db: Session):
+async def search_users_svc(query: str, db: Session, current_user: User):
     users = (
         db.query(
             User.id,
@@ -841,6 +873,13 @@ async def search_users_svc(query: str, db: Session):
         .order_by(func.count(Follow.follower_id).desc())  # Sort by followers count
         .all()
     )
+    
+    # Get list of user IDs the current user is following (batch instead of per-user query)
+    following_ids = set(
+        row[0] for row in db.query(Follow.following_id)
+        .filter(Follow.follower_id == current_user.id)
+        .all()
+    )
 
     return [
         {
@@ -849,7 +888,9 @@ async def search_users_svc(query: str, db: Session):
             "profile_pic": user.profile_pic,
             "name": user.name,
             "bio": user.bio,
-            "followers_count": user.followers_count
+            "followers_count": user.followers_count,
+            "is_following": user.id in following_ids,
+            "is_self": user.id == current_user.id
         }
         for user in users
     ]
