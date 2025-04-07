@@ -32,7 +32,8 @@ from .service import (
     get_posts_by_visibility_svc,
     get_following_posts_svc,
     search_hashtags_svc,
-    search_users_svc
+    search_users_svc,
+    get_user_liked_posts_svc
 )
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username, optional_current_user
@@ -373,3 +374,20 @@ async def search_hashtags(query: str, db: Session = Depends(get_db)):
 @router.get("/search/users")
 async def search_users(query: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await search_users_svc(query, db, current_user)
+
+@router.get("/user/liked-posts")
+async def get_current_user_liked_posts(
+    page: int,
+    limit: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # verify the token
+    user = current_user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You are not authorized."
+        )
+    posts = await get_user_liked_posts_svc(db, user.id, page, limit)
+    return posts
