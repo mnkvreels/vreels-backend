@@ -4,7 +4,7 @@ import math
 from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
-from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes
 from ..models.user import User, Follow
 from ..auth.schemas import User as UserSchema
 from ..models.post import VisibilityEnum
@@ -122,8 +122,16 @@ async def get_posts_from_hashtag_svc(
 
     # Get total count of posts with the given hashtag
     total_count = (
-        db.query(Post).join(post_hashtags).filter(Hashtag.name == hashtag_name).count()
+    db.query(Post.id)
+    .join(post_hashtags, Post.id == post_hashtags.c.post_id)
+    .join(Hashtag, Hashtag.id == post_hashtags.c.hashtag_id)
+    .filter(
+        Hashtag.name == hashtag_name,
+        Post.visibility == 'public'
     )
+    .distinct()
+    .count()
+)
 
     # Calculate offset for pagination
     offset = (page - 1) * limit
@@ -853,3 +861,62 @@ async def search_users_svc(query: str, db: Session):
         }
         for user in users
     ]
+async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
+    # Correct count using post_likes
+    total_count = (
+        db.query(func.count(Post.id))
+        .join(post_likes, Post.id == post_likes.c.post_id)
+        .filter(post_likes.c.user_id == user_id)
+        .scalar()
+    )
+
+    offset = (page - 1) * limit
+    if offset >= total_count:
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": [],
+        }
+
+    # Correctly fetch liked posts
+    liked_posts = (
+        db.query(Post)
+        .join(post_likes, Post.id == post_likes.c.post_id)
+        .filter(post_likes.c.user_id == user_id)
+        .order_by(desc(Post.created_at))
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for post in liked_posts:
+        post_dict = post.__dict__.copy()
+
+        # Related data
+        post_dict["username"] = post.author.username if post.author else None
+        post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
+
+        # Update counts
+        post.update_likes_and_comments_count(db)
+
+        # Since this is liked posts, this is always true
+        post_dict["is_liked"] = True
+
+        # Saved status
+        post_dict["is_saved"] = db.query(UserSavedPosts).filter(
+            UserSavedPosts.user_id == user_id,
+            UserSavedPosts.saved_post_id == post.id
+        ).first() is not None
+
+        result.append(post_dict)
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": result,
+    }
