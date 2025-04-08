@@ -286,7 +286,7 @@ async def get_post_from_post_id_svc(db: Session, current_user: User, post_id: in
             joinedload(Post.author),
             joinedload(Post.hashtags),
         )
-        .filter(Post.id == post_id)
+        .filter(Post.id == post_id, Post.visibility == VisibilityEnum.public)
         .first()
     )
 
@@ -338,8 +338,10 @@ async def get_post_from_post_id_svc(db: Session, current_user: User, post_id: in
         "location": post_query.location,
         "visibility": post_query.visibility.value,
         "author_id": post_query.author_id,
+        "username": post_query.author.username,
         "likes_count": post_query.likes_count,
         "comments_count": post_query.comments_count,
+        "share_count": post_query.share_count,
         "created_at": post_query.created_at,
         "hashtags": [tag.name for tag in post_query.hashtags],
         "is_liked": is_liked,
@@ -838,7 +840,21 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         "data": result,
     }  
 
-async def search_hashtags_svc(query: str, db: Session):
+async def search_hashtags_svc(query: str, db: Session, page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+
+    total_count = (
+        db.query(func.count(Hashtag.id))
+        .join(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)
+        .join(Post, Post.id == post_hashtags.c.post_id)
+        .filter(Hashtag.name.ilike(f"%{query}%"))
+        .filter(Post.visibility == VisibilityEnum.public)
+        .distinct()
+        .scalar()
+    )
+    
+    total_pages = max(1, math.ceil(total_count / limit))
+
     hashtags = (
         db.query(
             Hashtag.name, 
@@ -850,14 +866,35 @@ async def search_hashtags_svc(query: str, db: Session):
         .filter(Post.visibility == VisibilityEnum.public)  # Only count public posts
         .group_by(Hashtag.name)
         .order_by(func.count(post_hashtags.c.post_id).desc())  # Sort by post count
+        .limit(limit)
+        .offset(offset)
         .all()
     )
 
-    return [
-        {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
-    ]  
-    
-async def search_users_svc(query: str, db: Session, current_user: User):
+    return {
+        "metadata": {
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "limit": limit
+        },
+        "items": [
+            {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
+        ]
+    }
+ 
+async def search_users_svc(query: str, db: Session, current_user: User, page: int = 1, limit: int = 10):
+    offset = (page - 1) * limit
+
+    # Total matching users count
+    total_count = (
+        db.query(User.id)
+        .filter(User.username.ilike(f"%{query}%"))
+        .count()
+    )
+    total_pages = max(1, math.ceil(total_count / limit))
+
+    # Get user details along with follower count
     users = (
         db.query(
             User.id,
@@ -867,33 +904,46 @@ async def search_users_svc(query: str, db: Session, current_user: User):
             User.bio,
             func.count(Follow.follower_id).label("followers_count")
         )
-        .outerjoin(Follow, Follow.following_id == User.id)  # Get follower count
-        .filter(User.username.ilike(f"%{query}%"))  # Case-insensitive search
+        .outerjoin(Follow, Follow.following_id == User.id)
+        .filter(User.username.ilike(f"%{query}%"))
         .group_by(User.id, User.username, User.profile_pic, User.name, User.bio)
-        .order_by(func.count(Follow.follower_id).desc())  # Sort by followers count
+        .order_by(func.count(Follow.follower_id).desc())
+        .limit(limit)
+        .offset(offset)
         .all()
     )
-    
-    # Get list of user IDs the current user is following (batch instead of per-user query)
+
+    # Get all user IDs the current user is following
     following_ids = set(
         row[0] for row in db.query(Follow.following_id)
         .filter(Follow.follower_id == current_user.id)
         .all()
     )
 
-    return [
-        {
-            "user_id": user.id,
-            "username": user.username,
-            "profile_pic": user.profile_pic,
-            "name": user.name,
-            "bio": user.bio,
-            "followers_count": user.followers_count,
-            "is_following": user.id in following_ids,
-            "is_self": user.id == current_user.id
-        }
-        for user in users
-    ]
+    return {
+        "metadata": {
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "limit": limit
+        },
+        "items": [
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "profile_pic": user.profile_pic,
+                "name": user.name,
+                "bio": user.bio,
+                "followers_count": user.followers_count,
+                "is_following": user.id in following_ids,
+                "is_self": user.id == current_user.id
+            }
+            for user in users
+        ]
+    }
+
+    
+
 async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
     # Correct count using post_likes
     total_count = (

@@ -9,6 +9,9 @@ from ..auth.service import get_user_from_user_id, existing_user
 
 # follow
 async def follow_svc(db: Session, follower: str, following: str):
+    if follower == following:
+        raise HTTPException(status_code=400, detail="You cannot follow yourself.")
+    
     db_follower = await existing_user(db, follower, "")
     db_following = await existing_user(db, following, "")
     if not db_follower or not db_following:
@@ -52,6 +55,9 @@ async def follow_svc(db: Session, follower: str, following: str):
 
 # unfollow activity
 async def unfollow_svc(db: Session, follower: str, following: str):
+    if follower == following:
+        raise HTTPException(status_code=400, detail="You cannot unfollow yourself.")
+    
     db_follower = await existing_user(db, follower, "")
     db_following = await existing_user(db, following, "")
     if not db_follower or not db_following:
@@ -65,7 +71,7 @@ async def unfollow_svc(db: Session, follower: str, following: str):
     )
     if not db_follow:
         # Not following, return error message
-        return {"message": f"You are not following {db_following.username}."}
+        raise HTTPException(status_code=400, detail=f"You are not following {db_following.username}.")
 
     try:
         # Remove the follow relationship
