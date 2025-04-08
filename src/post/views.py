@@ -3,8 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from datetime import timedelta
 from ..database import get_db
-from .schemas import PostCreate, Post, SavePostRequest, SharePostRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -37,9 +38,11 @@ from .service import (
 )
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username, optional_current_user
-from ..auth.schemas import User
+from ..auth.schemas import UserIdRequest
 from ..azure_blob import upload_to_azure_blob
-from ..models.post import VisibilityEnum
+from ..models.post import VisibilityEnum, MediaInteraction, Post
+from ..models.user import UserDevice, User
+from ..notification_service import send_push_notification
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -59,7 +62,7 @@ class CommentRequest(BaseModel):
 # Regex pattern to check if a string is a valid URL
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
-@router.post("/", response_model=Post, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_post(
     visibility: VisibilityEnum = Form(VisibilityEnum.public),
     content: Optional[str] = Form(None),
@@ -153,18 +156,23 @@ async def get_saved_posts(page: int, limit: int, db: Session = Depends(get_db), 
 async def share_post(request: SharePostRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     sender_user_id = current_user.id
     try:
+        # Process post sharing logic
         res = await share_post_svc(db, sender_user_id, request)
-        
-        # Send notification to the receiver (with handling for invalid token)
-        try:
-            await send_notification_to_user(db,
-                user_id=request.receiver_user_id,
-                title="🔁 New Post Shared!",
-                message=f"{current_user.username} shared a post with you."
-            )
-        except Exception as e:
-            # Log the error but don't raise it to ensure the post share is still processed
-            print(f"Failed to send notification: {str(e)}")
+
+        # Get all devices of the receiver
+        receiver_devices = db.query(UserDevice).filter(UserDevice.user_id == request.receiver_user_id).all()
+
+        for device in receiver_devices:
+            if device.notify_share:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="🔁 New Post Shared!",
+                        message=f"{current_user.username} shared a post with you."
+                    )
+                except Exception as e:
+                    print(f"Failed to notify device {device.device_id}: {e}")
 
         return res
     except Exception as e:
@@ -239,15 +247,28 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
 
 @router.post("/like", status_code=status.HTTP_200_OK)
 async def like_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Perform the like action
     res = await like_post_svc(db, request.post_id, current_user.username)
-    # Get the post owner and notify them
+    
+    # Get the post and notify the post owner (if it's not the liker themselves)
     post = await get_post_from_post_id_svc(db, current_user, request.post_id)
-    if post and post["author_id"]!= current_user.id:
-        await send_notification_to_user(db,
-            user_id=post["author_id"],
-            title="❤️ New Like on Your Post!",
-            message=f"{current_user.username} liked your post."
-        )
+    
+    if post and post["author_id"] != current_user.id:
+        # Get all devices of the post owner
+        receiver_devices = db.query(UserDevice).filter(UserDevice.user_id == post["author_id"]).all()
+
+        for device in receiver_devices:
+            if device.notify_likes:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="❤️ New Like on Your Post!",
+                        message=f"{current_user.username} liked your post.",
+                    )
+                except Exception as e:
+                    print(f"Notification failed for device {device.device_id}: {e}")
+
     return {"message": "Liked the post"}
 
 @router.post("/unlike", status_code=status.HTTP_200_OK)
@@ -277,8 +298,12 @@ async def get_post(request: PostRequest, db: Session = Depends(get_db), current_
 
 
 @router.post("/comment", status_code=status.HTTP_201_CREATED)
-async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # verify the token
+async def comment_on_post(
+    request: CommentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Verify token
     user = current_user
     if not user:
         raise HTTPException(
@@ -288,15 +313,27 @@ async def comment_on_post(request: CommentRequest, db: Session = Depends(get_db)
     res, detail = await comment_on_post_svc(db, request.post_id, user.id, request.content)
     if not res:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
-    
-    # Get the post owner and notify them
+
+    # Notify post owner (if not commenting on own post)
     post = await get_post_from_post_id_svc(db, user, request.post_id)
     if post and post["author_id"] != current_user.id:
-        await send_notification_to_user(db,
-            user_id=post["author_id"],
-            title="💬 New Comment on Your Post!",
-            message=f"{current_user.username} commented: {request.content}"
-        )
+        # Fetch devices of post owner where notify_comments = True
+        devices_to_notify = db.query(UserDevice).filter(
+            UserDevice.user_id == post["author_id"],
+            UserDevice.notify_comments == True
+        ).all()
+
+        for device in devices_to_notify:
+            if device.device_token and device.platform:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="💬 New Comment on Your Post!",
+                        message=f"{current_user.username} commented: {request.content}"
+                    )
+                except Exception as e:
+                    print(f"Notification send failed for device {device.device_id}: {e}")
 
     return {"message": "Comment added successfully"}
 
@@ -391,3 +428,52 @@ async def get_current_user_liked_posts(
         )
     posts = await get_user_liked_posts_svc(db, user.id, page, limit)
     return posts
+
+@router.post("/log-media-interactions")
+async def log_interaction(interaction: MediaInteractionRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Logs user's media interaction (watched/skipped).
+    """
+    media_log = MediaInteraction(
+        user_id=current_user.id,
+        post_id=interaction.post_id,
+        watched_time=timedelta(seconds=interaction.watched_time),
+        # skipped=interaction.skipped,
+        # completed=interaction.completed
+    )
+    
+    db.add(media_log)
+    db.commit()
+    return {"message": "Interaction logged successfully"}
+
+@router.get("/media-interactions/post/{post_id}")
+async def get_media_interactions_by_post_id(post_id: int, db: Session = Depends(get_db)):
+    # Query the database for the post
+    post = db.query(Post).filter(Post.id == post_id).first()
+    
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Query for media interactions for the given post
+    interactions = db.query(MediaInteraction).filter(MediaInteraction.post_id == post_id).all()
+
+    if not interactions:
+        raise HTTPException(status_code=404, detail="No interactions found for this post")
+
+    return interactions
+
+@router.get("/media-interactions/user/{user_id}")
+async def get_media_interactions_by_user_id(user_id: int, db: Session = Depends(get_db)):
+    # Query the database for the user
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Query for media interactions for the given user
+    interactions = db.query(MediaInteraction).filter(MediaInteraction.user_id == user_id).all()
+
+    if not interactions:
+        raise HTTPException(status_code=404, detail="No interactions found for this user")
+
+    return interactions

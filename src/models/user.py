@@ -52,6 +52,7 @@ class User(Base):
     # Relationship for received shares (user who receives the shared post)
     shared_posts_received = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.receiver_user_id]", back_populates="receiver", cascade="all, delete")
     devices = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan")
+    media_interactions = relationship("MediaInteraction", back_populates="user", cascade="all, delete-orphan")
 
 class BlockedUsers(Base):
     __tablename__ = "blocked_users"
@@ -74,10 +75,20 @@ class UserDevice(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    device_id = Column(String(255), unique=True)  # Unique identifier for each device
-    device_token = Column(String(255), nullable=False)  # Device token for push notifications
-    platform = Column(String(50), nullable=False)  # Platform: iOS or Android
+    device_id = Column(String(255), unique=True)
+    device_token = Column(String(255), nullable=False)
+    platform = Column(String(50), nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
+
+    # Notification flags
+    notify_likes = Column(Boolean, default=True)
+    notify_comments = Column(Boolean, default=True)
+    notify_share = Column(Boolean, default=True)
+    notify_calls = Column(Boolean, default=True)
+    notify_messages = Column(Boolean, default=True)
+    notify_follow = Column(Boolean, default=True)
+    notify_posts = Column(Boolean, default=True)
+    notify_status = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="devices")
 

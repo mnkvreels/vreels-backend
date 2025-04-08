@@ -1,7 +1,7 @@
 from requests import Session
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum, Interval, Boolean
 from sqlalchemy.orm import relationship, backref
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from src.database import Base
 import enum
 
@@ -77,6 +77,7 @@ class Post(Base):
     share_count = Column(Integer, default=0)
     saved_by_users = relationship("UserSavedPosts", back_populates="post", cascade="all, delete")
     shared_by_users = relationship("UserSharedPosts", back_populates="post", cascade="all, delete")
+    interactions = relationship("MediaInteraction", back_populates="media", cascade="all, delete-orphan")
     def update_likes_and_comments_count(self, db: Session):
         """Update likes_count and comments_count for the post."""
         self.likes_count = (
@@ -128,3 +129,17 @@ class UserSharedPosts(Base):
     sender = relationship("User", foreign_keys=[sender_user_id], back_populates="shared_posts_sent")
     receiver = relationship("User", foreign_keys=[receiver_user_id], back_populates="shared_posts_received")
     post = relationship("Post", back_populates="shared_by_users")
+    
+class MediaInteraction(Base):
+    __tablename__ = "media_interactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)  # ID of the post
+    watched_time = Column(Interval, default=timedelta(seconds=0))  # Time watched
+    # skipped = Column(Boolean, default=False)  # Whether the user skipped the content
+    # completed = Column(Boolean, default=False)  # Whether the user finished watching
+    timestamp = Column(DateTime, default=datetime.now(timezone.utc))  # Timestamp of interaction
+
+    user = relationship("User", back_populates="media_interactions")
+    media = relationship("Post", back_populates="interactions")

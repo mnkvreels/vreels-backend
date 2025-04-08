@@ -79,3 +79,9 @@ class SavePostRequest(BaseModel):
 class SharePostRequest(BaseModel):
     receiver_user_id: int  # The user who will receive the post
     post_id: int
+    
+class MediaInteractionRequest(BaseModel):
+    post_id: int
+    watched_time: int  # in seconds
+    # skipped: bool
+    # completed: bool

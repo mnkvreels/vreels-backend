@@ -292,29 +292,27 @@ async def send_notification_to_user(db: Session, user_id: int, title: str, messa
     
     if user:
         # Get the device information from the UserDevice table
-        user_device = db.query(UserDevice).filter(UserDevice.user_id == user_id).order_by(desc(UserDevice.created_at)).first()
+        user_devices = db.query(UserDevice).filter(UserDevice.user_id == user_id).all()
         
-        if user_device:
-            # Now we have the device token and platform from the user_device table
-            device_token = user_device.device_token
-            platform = user_device.platform
+        if not user_devices:
+            print(f"No devices found for user_id {user_id}")
+            return
+
+        for device in user_devices:
+            if device.device_token and device.platform:
             
-            # Send the notification if both device_token and platform are available
-            if device_token and platform:
-                await send_push_notification(
-                    device_token=device_token,
-                    platform=platform,
-                    title=title,
-                    message=message
-                )
+            # Send the notification if both device_token and platform are available\
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title=title,
+                        message=message
+                    )
+                except Exception as e:
+                    print(f"Failed to send notification to device {device.device_id}: {e}")
             else:
-                # Handle cases where device_token or platform is missing
-                print(f"Device token or platform missing for user_id {user_id}")
-        else:
-            # Handle case where no device exists for the user
-            print(f"No device found for user_id {user_id}")
-    else:
-        print(f"User not found with user_id {user_id}")
+                print(f"Missing device_token/platform for device_id {device.device_id}")
 
 # OTP Generation function
 async def generate_otp(otp_length=6):
@@ -466,7 +464,15 @@ def update_device_token_svc(user_id: int, device_id: str, device_token: str, pla
             user_id=user_id,
             device_id=device_id,
             device_token=device_token,
-            platform=platform.lower()
+            platform=platform.lower(),
+            notify_likes=True,
+            notify_comments=True,
+            notify_share = True,
+            notify_calls=True,
+            notify_messages=True,
+            notify_follow=True,
+            notify_posts=True,
+            notify_status=True,
         )
         db.add(new_device)
 

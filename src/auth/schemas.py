@@ -79,3 +79,14 @@ class DeviceTokenRequest(BaseModel):
     device_id: str
     device_token: str
     platform: str  # iOS or Android
+    
+class UpdateNotificationFlagsRequest(BaseModel):
+    device_id: str
+    notify_likes: Optional[bool]
+    notify_comments: Optional[bool]
+    notify_share: Optional[bool]
+    notify_calls: Optional[bool]
+    notify_messages: Optional[bool]
+    notify_follow: Optional[bool]
+    notify_posts: Optional[bool]
+    notify_status: Optional[bool]
