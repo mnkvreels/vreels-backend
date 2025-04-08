@@ -12,7 +12,8 @@ from .service import (
     existing_user,
 )
 from ..auth.service import get_current_user, get_user_by_username, send_notification_to_user
-from ..models import User
+from ..models.user import User, UserDevice
+from ..notification_service import send_push_notification
 
 class UserRequest(BaseModel):
     username: str
@@ -30,7 +31,11 @@ async def profile(request: UserRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/follow", status_code=status.HTTP_200_OK)
-async def follow(request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def follow(
+    request: UserRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     db_user = current_user
     if not db_user:
         raise HTTPException(
@@ -38,20 +43,31 @@ async def follow(request: UserRequest, db: Session = Depends(get_db), current_us
         )
 
     res = await follow_svc(db, db_user.username, request.username)
-    if res == False:
+    if res is False:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="could not follow"
         )
     elif res:
         followed_user = await get_user_by_username(db, request.username)
-        
-        # Send notification to followed user
-        await send_notification_to_user(
-            db,
-            user_id=followed_user.id,
-            title="👥 New Follower!",
-            message=f"{current_user.username} is now following you."
-        )
+
+        # Fetch devices of followed user that allow follow notifications
+        devices = db.query(UserDevice).filter(
+            UserDevice.user_id == followed_user.id,
+            UserDevice.notify_follow == True  # assuming this is the correct column name
+        ).all()
+
+        for device in devices:
+            if device.device_token and device.platform:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="👥 New Follower!",
+                        message=f"{current_user.username} is now following you."
+                    )
+                except Exception as e:
+                    print(f"Notification send failed for device {device.device_id}: {e}")
+
         return {"message": "Followed successfully!"}
 
 

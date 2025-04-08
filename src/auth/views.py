@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, status, HTTPException, Form, UploadFile,
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from src.models.user import User, OTP
-from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest
+from src.models.user import User, OTP, UserDevice
+from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest
 from src.database import get_db
 from datetime import timedelta, datetime, timezone
 from .enums import AccountTypeEnum, GenderEnum
@@ -332,3 +332,26 @@ async def delete_account(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while deleting the account: {str(e)}"
         )
+        
+@router.post("/device/notification-settings")
+async def update_notification_flags(
+    request: UpdateNotificationFlagsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    device = db.query(UserDevice).filter(
+        UserDevice.user_id == current_user.id,
+        UserDevice.device_id == request.device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Update only provided fields
+    for field, value in request.dict(exclude_unset=True).items():
+        if field != "device_id":
+            setattr(device, field, value)
+
+    db.commit()
+    db.refresh(device)
+    return {"message": "Notification settings updated successfully"}
