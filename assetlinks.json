@@ -5,7 +5,7 @@
       ],
       "target": {
         "namespace": "android_app",
-        "package_name": "com.example.prototype25",
+        "package_name": "com.mnk.vreels",
         "sha256_cert_fingerprints": [
           "CA:AA:69:4B:60:77:EE:B6:84:35:35:96:4A:7C:0F:2C:06:6C:50:3A:9B:51:AF:FC:38:CA:90:18:52:3C:4F:23"
         ]
