@@ -405,12 +405,12 @@ async def get_following_posts(
     return await get_following_posts_svc(db, user.id, page, limit)
 
 @router.get("/search/hashtags")
-async def search_hashtags(query: str, db: Session = Depends(get_db)):
-    return await search_hashtags_svc(query, db)
+async def search_hashtags(page: int,limit: int, query: str, db: Session = Depends(get_db)):
+    return await search_hashtags_svc(query, db, page, limit)
 
 @router.get("/search/users")
-async def search_users(query: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return await search_users_svc(query, db, current_user)
+async def search_users(page: int ,limit: int, query: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await search_users_svc(query, db, current_user,page,limit)
 
 @router.get("/user/liked-posts")
 async def get_current_user_liked_posts(

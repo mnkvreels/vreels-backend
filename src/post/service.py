@@ -840,7 +840,7 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         "data": result,
     }  
 
-async def search_hashtags_svc(query: str, db: Session, page: int = 1, limit: int = 10):
+async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
     offset = (page - 1) * limit
 
     total_count = (
@@ -883,7 +883,7 @@ async def search_hashtags_svc(query: str, db: Session, page: int = 1, limit: int
         ]
     }
  
-async def search_users_svc(query: str, db: Session, current_user: User, page: int = 1, limit: int = 10):
+async def search_users_svc(query: str, db: Session, current_user: User, page: int, limit: int):
     offset = (page - 1) * limit
 
     # Total matching users count

@@ -1,4 +1,59 @@
-import requests
+import asyncio
+import firebase_admin
+from firebase_admin import credentials, messaging
+import os
+
+
+# ✅ Resolve absolute path to serviceAccountKey.json
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+cred_path = os.path.join(BASE_DIR, "serviceAccountKey.json")
+
+# ✅ Load credentials using correct path
+cred = credentials.Certificate(cred_path)
+
+try:
+    firebase_admin.get_app()
+except ValueError:
+    firebase_admin.initialize_app(cred)
+
+
+async def send_push_notification(device_token: str, platform: str, title: str, message: str):
+    """
+        Send FCM push notification asynchronously to a specific device.
+
+        Args:
+            device_token (str): FCM device registration token.
+            platform (str): 'android' or 'ios' (can be used for platform-specific configs).
+            title (str): Notification title.
+            message (str): Notification body.
+        """
+    # Platform-specific options (optional)
+    android_config = messaging.AndroidConfig(
+        priority='high',
+    )
+
+    apns_config = messaging.APNSConfig(
+        headers={"apns-priority": "10"},
+    )
+
+    message_payload = messaging.Message(
+        notification=messaging.Notification(title=title, body=message),
+        token=device_token,
+        android=android_config if platform.lower() == "android" else None,
+        apns=apns_config if platform.lower() == "ios" else None,
+    )
+
+    # Wrap blocking call in asyncio's thread pool
+    loop = asyncio.get_event_loop()
+    try:
+        response = await loop.run_in_executor(None, messaging.send, message_payload)
+        print(f"Notification sent successfully to {response}! 🎉")
+        return {"status": "success", "message_id": response}
+    except Exception as e:
+        print(f"Failed to send notification: {e}")
+        return {"status": "error", "message": str(e)}
+
+'''import requests
 import base64
 import hmac
 import hashlib
@@ -83,4 +138,4 @@ async def send_push_notification(device_token: str, platform: str, title: str, m
         raise HTTPException(
             status_code=response.status_code,
             detail=f"Failed to send notification: {response.text}",
-        )
+        )'''
