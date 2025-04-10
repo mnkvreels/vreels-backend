@@ -669,33 +669,52 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
     }
 
 async def share_post_svc(db: Session, sender_user_id: int, request: SharePostRequest):
-        """Creates a share record and updates share_count."""
-        try:
-            # Create a share record
-            shared_post = UserSharedPosts(
+    """Shares a post with multiple users, prevents duplicates, and updates share count."""
+    print("DEBUG - request data:")
+    print("receiver_user_ids =>", request.receiver_user_ids)
+    print("post_id =>", request.post_id)
+    try:
+        # Step 1: Check if the post exists
+        post = db.query(Post).filter(Post.id == request.post_id).first()
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        shared_count = 0  # Track how many users were newly shared with
+
+        # Step 2: Loop through receiver_user_ids
+        for receiver_id in request.receiver_user_ids:
+            # Check for duplicate share
+            already_shared = db.query(UserSharedPosts).filter_by(
                 sender_user_id=sender_user_id,
-                receiver_user_id=request.receiver_user_id,
+                receiver_user_id=receiver_id,
+                post_id=request.post_id
+            ).first()
+
+            if already_shared:
+                continue  # Skip if already shared
+
+            # Create new share record
+            new_share = UserSharedPosts(
+                sender_user_id=sender_user_id,
+                receiver_user_id=receiver_id,
                 post_id=request.post_id
             )
-            db.add(shared_post)
+            db.add(new_share)
+            shared_count += 1
 
-            # Increment share count of respective post
-            post = db.query(Post).filter(Post.id == request.post_id).first()
-            if post:
-                post.share_count += 1
-            else:
-                raise HTTPException(status_code=404, detail="Post not found")
+        # Step 3: Update post's share count (only increment by newly shared)
+        post.share_count += shared_count
 
-            db.commit()
-            return {"message": "Post shared successfully"}
-        
-        except SQLAlchemyError as e:
-            db.rollback()
-            raise Exception(f"Database error: {str(e)}")
-        
-        except Exception as e:
-            db.rollback()
-            raise Exception(f"Error sharing post: {str(e)}")
+        db.commit()
+        return {"message": f"Post shared with {shared_count} user(s)"}
+
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise Exception(f"Database error: {str(e)}")
+    
+    except Exception as e:
+        db.rollback()
+        raise Exception(f"Error sharing post: {str(e)}")
 
 async def unsend_share_svc(db: Session, sender_user_id: int, post_id: int, receiver_user_id: int):
     """Removes a share record and updates share_count."""
@@ -844,29 +863,27 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
 async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
     offset = (page - 1) * limit
 
-    total_count = (
-        db.query(func.count(Hashtag.id))
+    total_matching_hashtags = (
+        db.query(func.count(func.distinct(Hashtag.id)))
         .join(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)
         .join(Post, Post.id == post_hashtags.c.post_id)
         .filter(Hashtag.name.ilike(f"%{query}%"))
         .filter(Post.visibility == VisibilityEnum.public)
-        .distinct()
         .scalar()
     )
+    total_pages = math.ceil(total_matching_hashtags / limit) if total_matching_hashtags > 0 else 0 
     
-    total_pages = max(1, math.ceil(total_count / limit))
-
     hashtags = (
         db.query(
-            Hashtag.name, 
+            Hashtag.name,
             func.count(post_hashtags.c.post_id).label("post_count")
         )
         .join(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)
         .join(Post, Post.id == post_hashtags.c.post_id)
-        .filter(Hashtag.name.ilike(f"%{query}%"))  # Case-insensitive search
-        .filter(Post.visibility == VisibilityEnum.public)  # Only count public posts
+        .filter(Hashtag.name.ilike(f"%{query}%"))
+        .filter(Post.visibility == VisibilityEnum.public)
         .group_by(Hashtag.name)
-        .order_by(func.count(post_hashtags.c.post_id).desc())  # Sort by post count
+        .order_by(func.count(post_hashtags.c.post_id).desc())
         .limit(limit)
         .offset(offset)
         .all()
@@ -874,11 +891,11 @@ async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
 
     return {
         "metadata": {
-            "total_count": total_count,
+            "total_items": total_matching_hashtags,
             "total_pages": total_pages,
             "current_page": page,
-            "limit": limit
-        },
+            "limit": limit                  
+            },
         "items": [
             {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
         ]

@@ -160,7 +160,7 @@ async def share_post(request: SharePostRequest, db: Session = Depends(get_db), c
         res = await share_post_svc(db, sender_user_id, request)
 
         # Get all devices of the receiver
-        receiver_devices = db.query(UserDevice).filter(UserDevice.user_id == request.receiver_user_id).all()
+        receiver_devices = db.query(UserDevice).filter(UserDevice.user_id.in_(tuple(request.receiver_user_ids))).all()
 
         for device in receiver_devices:
             if device.notify_share:
