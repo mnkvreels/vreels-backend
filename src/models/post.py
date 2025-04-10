@@ -133,7 +133,7 @@ class MediaInteraction(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)  # ID of the post
-    watched_time = Column(Interval, default=timedelta(seconds=0))
+    watched_time = Column(Integer, default=0)
     media_type = Column(Enum(MediaTypeEnum), nullable=False, default=MediaTypeEnum.image)  # Media type: image or video
     video_length = Column(Integer, nullable=True, default=timedelta(seconds=0))  # Length of video in seconds (nullable for images)
     skipped = Column(Boolean, default=False)  # Whether the user skipped the content
