@@ -84,4 +84,4 @@ class MediaInteractionRequest(BaseModel):
     post_id: int
     watched_time: int  # in seconds
     media_type: MediaTypeEnum
-    video_length: Optional[int] = None  # nullable for images
+    video_length: Optional[int] = 0  # nullable for images

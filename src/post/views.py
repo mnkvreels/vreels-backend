@@ -441,9 +441,9 @@ async def log_interaction(
     media_log = MediaInteraction(
         user_id=current_user.id,
         post_id=interaction.post_id,
-        watched_time=timedelta(seconds=interaction.watched_time),
+        watched_time=interaction.watched_time,
         media_type=interaction.media_type,
-        video_length=interaction.video_length,
+        video_length=interaction.video_length
     )
     
     db.add(media_log)
