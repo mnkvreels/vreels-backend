@@ -430,7 +430,11 @@ async def get_current_user_liked_posts(
     return posts
 
 @router.post("/log-media-interactions")
-async def log_interaction(interaction: MediaInteractionRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def log_interaction(
+    interaction: MediaInteractionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Logs user's media interaction (watched/skipped).
     """
@@ -438,8 +442,8 @@ async def log_interaction(interaction: MediaInteractionRequest, db: Session = De
         user_id=current_user.id,
         post_id=interaction.post_id,
         watched_time=timedelta(seconds=interaction.watched_time),
-        # skipped=interaction.skipped,
-        # completed=interaction.completed
+        media_type=interaction.media_type,
+        video_length=interaction.video_length,
     )
     
     db.add(media_log)

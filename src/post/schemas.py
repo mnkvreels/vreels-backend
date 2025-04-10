@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
-from ..models.post import VisibilityEnum
+from .enums import VisibilityEnum, MediaTypeEnum
 
 class PaginationMetadata(BaseModel):
     total_count: int
@@ -83,5 +83,5 @@ class SharePostRequest(BaseModel):
 class MediaInteractionRequest(BaseModel):
     post_id: int
     watched_time: int  # in seconds
-    # skipped: bool
-    # completed: bool
+    media_type: MediaTypeEnum
+    video_length: Optional[int] = None  # nullable for images
