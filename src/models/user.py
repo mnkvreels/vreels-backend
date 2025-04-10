@@ -33,6 +33,7 @@ class User(Base):
     email = Column(String(255), unique=True)
     location = Column(String(255))
     account_type = Column(Enum(AccountTypeEnum), default=AccountTypeEnum.PUBLIC, nullable=False)
+    report_count = Column(Integer, default=0)
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")

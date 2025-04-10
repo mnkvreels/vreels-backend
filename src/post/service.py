@@ -342,6 +342,7 @@ async def get_post_from_post_id_svc(db: Session, current_user: User, post_id: in
         "likes_count": post_query.likes_count,
         "comments_count": post_query.comments_count,
         "share_count": post_query.share_count,
+        "report_count": post_query.report_count,
         "created_at": post_query.created_at,
         "hashtags": [tag.name for tag in post_query.hashtags],
         "is_liked": is_liked,

@@ -1,14 +1,9 @@
 from requests import Session
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum, Interval, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum, Interval, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone, timedelta
 from src.database import Base
-import enum
-
-class VisibilityEnum(str, enum.Enum):
-    public = "public"
-    private = "private"
-    friends = "friends"
+from ..post.enums import VisibilityEnum, MediaTypeEnum
 
 # Many-to-Many Association Table (users ↔ Liked posts)
 post_likes = Table(
@@ -45,6 +40,7 @@ class Comment(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     content = Column(Text)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    report_count = Column(Integer, default=0)
 
     post_id = Column(Integer, ForeignKey("posts.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
@@ -63,6 +59,7 @@ class Post(Base):
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
+    report_count = Column(Integer, default=0)
 
     author_id = Column(Integer, ForeignKey("users.id"))
     author = relationship("User", back_populates="posts")
@@ -136,10 +133,12 @@ class MediaInteraction(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)  # ID of the post
-    watched_time = Column(Interval, default=timedelta(seconds=0))  # Time watched
-    # skipped = Column(Boolean, default=False)  # Whether the user skipped the content
+    watched_time = Column(Interval, default=timedelta(seconds=0))
+    media_type = Column(Enum(MediaTypeEnum), nullable=False, default=MediaTypeEnum.image)  # Media type: image or video
+    video_length = Column(Integer, nullable=True, default=timedelta(seconds=0))  # Length of video in seconds (nullable for images)
+    skipped = Column(Boolean, default=False)  # Whether the user skipped the content
     # completed = Column(Boolean, default=False)  # Whether the user finished watching
-    timestamp = Column(DateTime, default=datetime.now(timezone.utc))  # Timestamp of interaction
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))  # Timestamp of interaction
 
     user = relationship("User", back_populates="media_interactions")
     media = relationship("Post", back_populates="interactions")
