@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import timedelta
 from ..database import get_db
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -68,6 +68,7 @@ async def create_post(
     content: Optional[str] = Form(None),
     file: UploadFile = Form(...),
     location: Optional[str] = Form(None),
+    category_of_content: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -76,13 +77,14 @@ async def create_post(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-    post = PostCreate(content=content, location=location, visibility=visibility)
     file_url = None
     if file:
         try:
-            file_url = await upload_to_azure_blob(file,user.username,str(user.id))
+            file_url, media_type = await upload_to_azure_blob(file,user.username,str(user.id))
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
+    post = PostCreate(content=content, location=location, visibility=visibility, category_of_content=category_of_content, media_type=media_type)
 
     # Create the post with the file URL (if any)
     db_post = await create_post_svc(db, post, current_user.id, file_url)
@@ -108,6 +110,24 @@ async def create_post(
     #         print(f"Failed to send notification: {str(e)}")
     
     return db_post
+
+@router.patch("/edit/{post_id}", status_code=status.HTTP_200_OK)
+async def edit_post(
+    post_id: int,
+    updates: PostUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = db.query(Post).filter(Post.id == post_id, Post.author_id == current_user.id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found or not yours")
+
+    for key, value in updates.dict(exclude_unset=True).items():
+        setattr(post, key, value)
+
+    db.commit()
+    db.refresh(post)
+    return post
 
 @router.get("/user")
 async def get_current_user_posts(page: int, limit: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
