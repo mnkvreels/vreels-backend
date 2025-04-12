@@ -23,17 +23,17 @@ router = APIRouter(prefix="/report", tags=["report"])
 
 @router.post("/post")
 async def report_post(data: ReportPostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return await report_post_svc(data.post_id, current_user.id, data.reason, db)
+    return await report_post_svc(data.post_id, current_user.id, data.reason, data.description, db)
 
 
 @router.post("/user")
 async def report_user(data: ReportUserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return await report_user_svc(data.user_id, current_user.id, data.reason, db)
+    return await report_user_svc(data.user_id, current_user.id, data.reason, data.description, db)
 
 
 @router.post("/comment")
 async def report_comment(data: ReportCommentRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return await report_comment_svc(data.comment_id, current_user.id, data.reason, db)
+    return await report_comment_svc(data.comment_id, current_user.id, data.reason, data.description, db)
 
 
 # @router.post("/chat")

@@ -1,35 +1,40 @@
 from sqlalchemy import VARCHAR
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..models.report import ReportPost, ReportUser, ReportComment
+from ..models.report import ReportPost, ReportUser, ReportComment, ReportReason
 from ..models.post import Comment, Post
 from ..models.user import User
 from .enums import ReportReasonEnum
 
-async def report_post_svc(post_id: int, reported_by: int, reason: str, db: Session):
+async def report_post_svc(post_id: int, reported_by: int, reason: str, description: str, db: Session):
     try:
-        if reason not in ReportReasonEnum.__members__:
-            raise HTTPException(status_code=400, detail=f"Invalid reason: {reason}")
-        
         existing_report = db.query(ReportPost).filter(
-            ReportPost.post_id == post_id, ReportPost.reported_by == reported_by
+            ReportPost.post_id == post_id,
+            ReportPost.reported_by == reported_by
         ).first()
-
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this post.")
 
-        report = ReportPost(post_id=post_id, reported_by=reported_by, reason=reason)
-        db.add(report)
+        # Insert reason first
+        report_reason = ReportReason(report_reason_name=reason)
+        db.add(report_reason)
         db.commit()
-        
+        db.refresh(report_reason)
+
+        # Insert report
+        report = ReportPost(
+            post_id=post_id,
+            reported_by=reported_by,
+            report_reason_id=report_reason.report_reason_id,
+            description=description
+        )
+        db.add(report)
         post = db.query(Post).filter(Post.id == post_id).first()
         if post:
-            if post.report_count is None:
-                post.report_count = 0
-            post.report_count += 1
+            post.report_count = (post.report_count or 0) + 1
 
         db.commit()
-    
+
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error reporting post: {str(e)}")
@@ -37,27 +42,31 @@ async def report_post_svc(post_id: int, reported_by: int, reason: str, db: Sessi
     return {"message": "Post reported successfully."}
 
 
-async def report_user_svc(user_id: int, reported_by: int, reason: str, db: Session):
+async def report_user_svc(user_id: int, reported_by: int, reason: str,  description: str, db: Session):
     try:
-        if reason not in ReportReasonEnum.__members__:
-            raise HTTPException(status_code=400, detail=f"Invalid reason: {reason}")
-        
         existing_report = db.query(ReportUser).filter(
-            ReportUser.user_id == user_id, ReportUser.reported_by == reported_by
+            ReportUser.user_id == user_id,
+            ReportUser.reported_by == reported_by
         ).first()
-
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this user.")
-        
-        report = ReportUser(user_id=user_id, reported_by=reported_by, reason=reason)
-        db.add(report)
+        # Insert reason
+        report_reason = ReportReason(report_reason_name=reason)
+        db.add(report_reason)
         db.commit()
-        
+        db.refresh(report_reason)
+
+        # Insert report
+        report = ReportUser(
+            user_id=user_id,
+            reported_by=reported_by,
+            report_reason_id=report_reason.report_reason_id,
+            description=description
+        )
+        db.add(report)
         user = db.query(User).filter(User.id == user_id).first()
         if user:
-            if user.report_count is None:
-                user.report_count = 0
-            user.report_count += 1
+            user.report_count = (user.report_count or 0) + 1
         
         db.commit()
     
@@ -68,28 +77,34 @@ async def report_user_svc(user_id: int, reported_by: int, reason: str, db: Sessi
     return {"message": "User reported successfully."}
 
 
-async def report_comment_svc(comment_id: int, reported_by: int, reason: str, db: Session):
+async def report_comment_svc(comment_id: int, reported_by: int, reason: str,  description: str, db: Session):
     try:
-        if reason not in ReportReasonEnum.__members__:
-            raise HTTPException(status_code=400, detail=f"Invalid reason: {reason}")
-        
         existing_report = db.query(ReportComment).filter(
-            ReportComment.comment_id == comment_id, ReportComment.reported_by == reported_by
+            ReportComment.comment_id == comment_id,
+            ReportComment.reported_by == reported_by
         ).first()
 
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this comment.")
-        
-        report = ReportComment(comment_id=comment_id, reported_by=reported_by, reason=reason)
+
+        # Insert reason
+        report_reason = ReportReason(report_reason_name=reason)
+        db.add(report_reason)
+        db.commit()
+        db.refresh(report_reason)
+
+        # Insert report
+        report = ReportComment(
+            comment_id=comment_id,
+            reported_by=reported_by,
+            report_reason_id=report_reason.report_reason_id,
+            description=description
+        )
         db.add(report)
         
-        db.commit()
         comment = db.query(Comment).filter(Comment.id == comment_id).first()
         if comment:
-            if comment.report_count is None:
-                comment.report_count = 0
-            comment.report_count += 1
-        
+            comment.report_count = (comment.report_count or 0) + 1
         db.commit()
     
     except Exception as e:

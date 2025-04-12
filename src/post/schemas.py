@@ -53,6 +53,8 @@ class PostCreate(BaseModel):
     media: Optional[str] = None
     location: Optional[str] = None
     visibility: VisibilityEnum = VisibilityEnum.public
+    category_of_content: Optional[str]
+    media_type: Optional[str]
 
     class Config:
         orm_mode = True
@@ -71,6 +73,14 @@ class Post(PostCreate):
 
     class Config:
         orm_mode = True
+        
+class PostUpdate(BaseModel):
+    content: Optional[str]
+    location: Optional[str]
+    visibility: Optional[VisibilityEnum]
+    category_of_content: Optional[str]
+    views_count: Optional[int]
+    media_type: Optional[str]
 
 # Pyndantic model for saving a post (when user tries to save a post)
 class SavePostRequest(BaseModel):

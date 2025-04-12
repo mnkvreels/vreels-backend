@@ -1,28 +1,43 @@
 from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint, String, Enum
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.database import Base
 from ..reports.enums import ReportReasonEnum
+
+class ReportReason(Base):
+    __tablename__ = "report_reasons"
+    report_reason_id = Column(Integer, primary_key=True)
+    report_reason_name = Column(String(100), nullable=False, unique=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class ReportPost(Base):
     __tablename__ = "report_posts"
     id = Column(Integer, primary_key=True)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    reason = Column(Enum(ReportReasonEnum), nullable=False, default=ReportReasonEnum.other)
+    report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
+    reason = relationship("ReportReason", backref="report_posts")
+    description = Column(String(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (UniqueConstraint("post_id", "reported_by", name="uix_post_report"),)
-
+    __table_args__ = (
+        UniqueConstraint("post_id", "reported_by", name="uix_post_report"),
+    )
 
 class ReportUser(Base):
     __tablename__ = "report_users"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    reason = Column(Enum(ReportReasonEnum), nullable=False, default=ReportReasonEnum.other)
+    report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
+    reason = relationship("ReportReason", backref="report_users")
+    description = Column(String(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (UniqueConstraint("user_id", "reported_by", name="uix_user_report"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "reported_by", name="uix_user_report"),
+    )
 
 
 class ReportComment(Base):
@@ -30,10 +45,14 @@ class ReportComment(Base):
     id = Column(Integer, primary_key=True)
     comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    reason = Column(Enum(ReportReasonEnum), nullable=False, default=ReportReasonEnum.other)
+    report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
+    reason = relationship("ReportReason", backref="report_comments")
+    description = Column(String(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (UniqueConstraint("comment_id", "reported_by", name="uix_comment_report"),)
+    __table_args__ = (
+        UniqueConstraint("comment_id", "reported_by", name="uix_comment_report"),
+    )
 
 
 # class ReportChat(Base):

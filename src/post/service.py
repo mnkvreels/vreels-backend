@@ -40,6 +40,8 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
         location=post.location,
         author_id=user_id,
         visibility=post.visibility,
+        category_of_content=post.category_of_content,
+        media_type=post.media_type,
     )
 
     await create_hashtags_svc(db, db_post)
@@ -342,6 +344,10 @@ async def get_post_from_post_id_svc(db: Session, current_user: User, post_id: in
         "likes_count": post_query.likes_count,
         "comments_count": post_query.comments_count,
         "share_count": post_query.share_count,
+        "save_count": post_query.save_count,
+        "views_count": post_query.views_count,
+        "category_of_content": post_query.category_of_content,
+        "media_type": post_query.media_type,
         "report_count": post_query.report_count,
         "created_at": post_query.created_at,
         "hashtags": [tag.name for tag in post_query.hashtags],
@@ -613,6 +619,7 @@ async def save_post_svc(db: Session, user_id: int, post_id: int):
         visibility=post.visibility,
     )
     db.add(saved_post)
+    post.save_count += 1
     db.commit()
     db.refresh(saved_post)
 
@@ -629,6 +636,12 @@ async def unsave_post_svc(db: Session, user_id: int, post_id: int):
 
     # Delete the saved post entry
     db.delete(saved_post)
+    # Decrement save_count for the related post
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if post and post.save_count > 0:
+        post.save_count -= 1
+        db.add(post)
+    
     db.commit()
 
     return {"message": "Post unsaved successfully"}
@@ -650,6 +663,10 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             Post.created_at,
             Post.likes_count,
             Post.comments_count,
+            Post.save_count,
+            Post.views_count,
+            Post.category_of_content,
+            Post.media_type,
             Post.share_count,
             Post.visibility
         )

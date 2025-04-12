@@ -60,7 +60,10 @@ class Post(Base):
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
     report_count = Column(Integer, default=0)
-
+    views_count = Column(Integer, default=0)  # NEW
+    save_count = Column(Integer, default=0)   # NEW
+    category_of_content = Column(String(100), nullable=True)  # NEW
+    media_type = Column(String(50), nullable=True)  # NEW
     author_id = Column(Integer, ForeignKey("users.id"))
     author = relationship("User", back_populates="posts")
     visibility = Column(Enum(VisibilityEnum), nullable=False, default="public")
