@@ -1,14 +1,16 @@
 # src/report/views.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth.service import get_current_user
 from ..models.user import User
+from ..models.report import UserAppReport
 from .schemas import (
     ReportPostRequest,
     ReportUserRequest,
-    ReportCommentRequest
+    ReportCommentRequest,
+    ReportIssueRequest
 )
 from .service import (
     report_post_svc,
@@ -69,6 +71,22 @@ async def get_reported_comments_by_user_route(
         raise HTTPException(status_code=404, detail="No comments reported by this user.")
     return result
 
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def report_issue(payload: ReportIssueRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    report = UserAppReport(
+        reporting_user_id=current_user.id,
+        report_reason=payload.report_reason,
+        description=payload.description
+    )
+
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+
+    return {
+        "message": "Thank you for your feedback! Our team will review the issue.",
+        "report_id": report.id
+    }
 
 # @router.get("/chats/by-user/{user_id}", response_model=dict)
 # async def get_reported_chats_by_user_route(

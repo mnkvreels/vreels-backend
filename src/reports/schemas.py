@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from sqlalchemy import VARCHAR
-from .enums import ReportReasonEnum
+from .enums import ReportReasonEnum, ReportEnum
 from typing import Optional
 
 class ReportPostRequest(BaseModel):
@@ -17,6 +17,10 @@ class ReportCommentRequest(BaseModel):
     comment_id: int
     description: Optional[str] = None
     reason: ReportReasonEnum
+
+class ReportIssueRequest(BaseModel):
+    report_reason: ReportEnum
+    description: Optional[str]
 
 # class ReportChatRequest(BaseModel):
 #     thread_id: str
