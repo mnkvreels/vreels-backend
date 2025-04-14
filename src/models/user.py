@@ -1,4 +1,4 @@
-from sqlalchemy import VARCHAR, Column, Date, DateTime, Integer, String, Boolean, Enum, ForeignKey, BigInteger
+from sqlalchemy import VARCHAR, Column, Date, DateTime, Integer, String, Boolean, Enum, ForeignKey, BigInteger, NVARCHAR
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship, backref
 from src.database import Base
@@ -25,13 +25,13 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
-    name = Column(String(255))
+    name = Column(NVARCHAR(255))
     dob = Column(Date)
     gender = Column(Enum(GenderEnum))
     profile_pic = Column(String)
-    bio = Column(String(255))
+    bio = Column(NVARCHAR(255))
     email = Column(String(255), unique=True)
-    location = Column(String(255))
+    location = Column(NVARCHAR(255))
     account_type = Column(Enum(AccountTypeEnum), default=AccountTypeEnum.PUBLIC, nullable=False)
     report_count = Column(Integer, default=0)
     # One-to-Many relationships
@@ -90,8 +90,19 @@ class UserDevice(Base):
     notify_follow = Column(Boolean, default=True)
     notify_posts = Column(Boolean, default=True)
     notify_status = Column(Boolean, default=True)
+    sync_contacts = Column(Boolean, default=False)
 
     user = relationship("User", back_populates="devices")
 
     def __repr__(self):
         return f"<UserDevice(user_id={self.user_id}, device_id={self.device_id}, platform={self.platform})>"
+    
+class UserDeviceContact(Base):
+    __tablename__ = "user_device_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_device_id = Column(Integer, ForeignKey("user_devices.id", ondelete="CASCADE"), nullable=False)
+    name = Column(NVARCHAR(255), nullable=False)
+    phone_number = Column(String(50), nullable=False)
+
+    user_device = relationship("UserDevice", backref="device_contacts")

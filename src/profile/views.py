@@ -14,21 +14,44 @@ from .service import (
     get_suggested_users_svc,
 )
 from ..auth.service import get_current_user, get_user_by_username, send_notification_to_user
-from ..models.user import User, UserDevice
+from ..models.user import User, UserDevice, Follow
 from ..notification_service import send_push_notification
+from ..auth.enums import AccountTypeEnum
 
 class UserRequest(BaseModel):
     username: str
 
+class ProfileRequest(BaseModel):
+    username: str
+    requesting_username: str
+
 router = APIRouter(prefix="/profile", tags=["profile"])
 
-@router.get("/user", response_model=Profile)
-async def profile(request: UserRequest, db: Session = Depends(get_db)):
+@router.get("/user")
+async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
     db_user = await existing_user(db, request.username)
     if not db_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Invalid username"
         )
+    requesting_user = db.query(User).filter(User.username == request.requesting_username).first()
+    if requesting_user and requesting_user.id == db_user.id:
+        return db_user
+    if db_user.account_type == AccountTypeEnum.PRIVATE:
+        is_follower = db.query(Follow).filter(
+            Follow.following_id == db_user.id,
+            Follow.follower_id == requesting_user.id
+        ).first()
+        
+        if not is_follower:
+            # Return limited profile (just public fields)
+            return {
+                "username": db_user.username,
+                "name": db_user.name,
+                "profile_pic": db_user.profile_pic,
+                "account_type": db_user.account_type,
+                "is_private": True,
+            }
     return db_user
 
 

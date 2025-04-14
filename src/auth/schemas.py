@@ -1,8 +1,6 @@
 from pydantic import BaseModel
 from datetime import date, datetime
-from typing import Optional
-
-from sqlalchemy import BigInteger
+from typing import Optional, List
 from .enums import GenderEnum, AccountTypeEnum
 
 # Base class for user data with essential fields
@@ -92,3 +90,13 @@ class UpdateNotificationFlagsRequest(BaseModel):
     notify_follow: Optional[bool]
     notify_posts: Optional[bool]
     notify_status: Optional[bool]
+    sync_contacts: Optional[bool]
+    
+class ContactIn(BaseModel):
+    name: str
+    phone_number: str
+
+class ToggleContactsSyncRequest(BaseModel):
+    device_id: str
+    sync_contacts: bool
+    contacts: List[ContactIn] = []
