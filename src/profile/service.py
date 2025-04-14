@@ -91,31 +91,43 @@ async def unfollow_svc(db: Session, follower: str, following: str):
 
 
 # get followers
-async def get_followers_svc(db: Session, user_id: int) -> list[FollowersList]:
+async def get_followers_svc(db: Session, user_id: int) -> FollowersList:
     db_user = await get_user_from_user_id(db, user_id)
     if not db_user:
-        return []
+        return FollowersList(followers=[])
 
     try:
-        # Fetch followers by joining the Follow table and User table
+        # Get users who follow the current user
         db_followers = (
-            db.query(User)  # Directly select distinct users
-            .join(Follow, Follow.follower_id == User.id)  # Join on the follower ID
-            .filter(Follow.following_id == user_id)  # We want the followers of the user
-            .distinct(User.id)  # Ensures each follower is unique
+            db.query(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .filter(Follow.following_id == user_id)
+            .distinct(User.id)
             .all()
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Database error")
 
     followers = []
-    for user in db_followers:
+    for follower in db_followers:
+        # Check if current user is following this follower (follow back)
+        is_following_back = (
+            db.query(Follow)
+            .filter(
+                Follow.follower_id == user_id,
+                Follow.following_id == follower.id
+            )
+            .first()
+            is not None
+        )
+
         followers.append(
             {
-                "user_id": user.id,
-                "profile_pic": user.profile_pic,
-                "name": user.name,
-                "username": user.username,
+                "user_id": follower.id,
+                "profile_pic": follower.profile_pic,
+                "name": follower.name,
+                "username": follower.username,
+                "follow_back": not is_following_back,  # True if you’re NOT following them
             }
         )
 

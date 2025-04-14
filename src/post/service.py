@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload, aliased
 import re
 import math
+from typing import Union, Optional
 from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
@@ -56,12 +57,28 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
 
 
 # get user's posts
-async def get_user_posts_svc(db: Session, user_id: int, current_user: User, page: int, limit: int) -> dict:
-    # Get the total count of posts for the given user
-    total_count = db.query(Post).filter(Post.author_id == user_id).count()
-
+async def get_user_posts_svc(
+    db: Session,
+    user_id: int,
+    current_user: Optional[User],
+    page: int,
+    limit: int
+) -> dict:
     # Calculate the offset for pagination
     offset = (page - 1) * limit
+
+    # Base query: Fetch posts by the specified user
+    posts_query = db.query(Post).filter(Post.author_id == user_id)
+
+    # Apply visibility filters
+    if not current_user or current_user.id != user_id:
+        # If the current user is not the owner, show only public posts
+        posts_query = posts_query.filter(Post.visibility == "public")
+
+    # Count total posts after applying visibility filters
+    total_count = posts_query.count()
+
+    # Handle case where offset exceeds total count
     if offset >= total_count:
         return {
             "total_count": total_count,
@@ -70,29 +87,6 @@ async def get_user_posts_svc(db: Session, user_id: int, current_user: User, page
             "total_pages": (total_count + limit - 1) // limit,
             "data": [],
         }
-
-    # Base query
-    posts_query = (
-        db.query(Post)
-        .join(User, Post.author_id == User.id)
-        .filter(Post.author_id == user_id)
-    )
-
-    # Apply visibility filters if current_user is not the same as the user_id
-    if current_user and current_user.id != user_id:
-        # Check if current_user is following the post owner
-        is_following = db.query(Follow).filter(
-            Follow.follower_id == current_user.id,
-            Follow.following_id == user_id
-        ).first() is not None
-
-        posts_query = posts_query.filter(Post.visibility != "private")
-
-        if not is_following:
-            posts_query = posts_query.filter(Post.visibility != "friends")
-
-    # Count total after filtering
-    total_count = posts_query.count()
 
     # Fetch posts with pagination
     posts = (
@@ -105,9 +99,8 @@ async def get_user_posts_svc(db: Session, user_id: int, current_user: User, page
 
     result = []
     for post in posts:
-        # Get dynamic attributes like 'username', 'hashtags', and check likes/saves
+        #Get dynamic attributes like 'username'. 'hashtgas', and check likes/saves
         post_dict = post.__dict__.copy()  # Get all fields dynamically
-        
         # Add dynamic relationships like 'username' (author) and 'hashtags'
         post_dict["username"] = post.author.username if post.author else None
         post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
@@ -115,15 +108,24 @@ async def get_user_posts_svc(db: Session, user_id: int, current_user: User, page
         # Update likes and comments count dynamically
         post.update_likes_and_comments_count(db)
 
-        # Check if the user liked the post
-        post_dict["is_liked"] = db.query(Like).filter(Like.user_id == user_id, Like.post_id == post.id).first() is not None
+        # Check if the current user liked or saved the post
+        if current_user:
+            post_dict["is_liked"] = db.query(Like).filter(
+                Like.user_id == current_user.id,
+                Like.post_id == post.id
+            ).first() is not None
         
-        # Check if the user saved the post
-        post_dict["is_saved"] = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post.id).first() is not None
+     # Check if the user saved the post
+            post_dict["is_saved"] = db.query(UserSavedPosts).filter(
+                UserSavedPosts.user_id == current_user.id,
+                UserSavedPosts.saved_post_id == post.id
+            ).first() is not None
+        else:
+            post_dict["is_liked"] = False
+            post_dict["is_saved"] = False
 
         result.append(post_dict)
-
-    # Return the final paginated result
+        #Return the final paginated result
     return {
         "total_count": total_count,
         "page": page,
@@ -516,6 +518,30 @@ async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: 
     db.commit()
 
     return True, "comment added"
+
+async def delete_comments_svc(db: Session, post_id: int, user_id: int, comment_ids: Union[int, list[int]]) -> int:
+    # Ensure the post belongs to the current user
+    post = db.query(Post).filter(Post.id == post_id, Post.author_id == user_id).first()
+    if not post:
+        raise Exception("Post not found or you're not the owner")
+
+    # Normalize comment_ids to list
+    if isinstance(comment_ids, int):
+        comment_ids = [comment_ids]
+
+    comments = db.query(Comment).filter(
+        Comment.post_id == post_id,
+        Comment.id.in_(comment_ids)
+    ).all()
+
+    if not comments:
+        raise Exception("No matching comments found")
+
+    for comment in comments:
+        db.delete(comment)
+
+    db.commit()
+    return len(comments) 
 
 
 # Get comments for a post
