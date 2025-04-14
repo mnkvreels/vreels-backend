@@ -41,6 +41,8 @@ class UserUpdate(BaseModel):
     profile_pic: Optional[str] = None  # Link to user's profile picture (optional)
     phone_number: Optional[int]
     account_type: Optional[AccountTypeEnum] = None
+    followers_count: Optional[int]
+    following_count: Optional[int]
 
 
 # Full user profile including the created date and ID, combining UserBase and UserUpdate

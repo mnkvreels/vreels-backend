@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
 from .enums import VisibilityEnum, MediaTypeEnum
 
@@ -34,6 +34,9 @@ class Comment(BaseModel):
     class Config:
         orm_mode = True
 
+class CommentDeleteRequest(BaseModel):
+    post_id: int
+    comment_ids: Union[int, List[int]]
 
 # Pydantic model for Like (to represent users who liked the post)
 class Like(BaseModel):

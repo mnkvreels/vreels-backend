@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import timedelta
 from ..database import get_db
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -34,7 +34,8 @@ from .service import (
     get_following_posts_svc,
     search_hashtags_svc,
     search_users_svc,
-    get_user_liked_posts_svc
+    get_user_liked_posts_svc,
+    delete_comments_svc
 )
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username, optional_current_user
@@ -357,6 +358,34 @@ async def comment_on_post(
 
     return {"message": "Comment added successfully"}
 
+@router.delete("/delete", status_code=status.HTTP_200_OK)
+async def delete_comments(
+    request: CommentDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user = current_user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You are not authorized to delete comments.",
+        )
+
+    post = await get_post_from_post_id_svc(db, user, request.post_id)
+    if post and post["author_id"] != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You are not authorized to delete comments on this post.",
+        )
+
+    try:
+        deleted_count= await delete_comments_svc(db, request.post_id, user.id, request.comment_ids)
+        return  {"message": f"Deleted {deleted_count} comment(s) successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
 @router.get("/postcomments")
 async def get_comments_for_post(
