@@ -8,3 +8,7 @@ class ReportReasonEnum(str, enum.Enum):
     misinformation = "misinformation"
     harassment = "harassment"
     other = "other"
+    
+class ReportEnum(str, enum.Enum):
+    BUG = "Bug"
+    OTHER = "Other"

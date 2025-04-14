@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, status, HTTPException, Form, UploadFile,
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from src.models.user import User, OTP, UserDevice
-from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest
+from src.models.user import User, OTP, UserDevice, UserDeviceContact
+from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn
 from src.database import get_db
+from typing import List
 from datetime import timedelta, datetime, timezone
 from .enums import AccountTypeEnum, GenderEnum
 from ..azure_blob import upload_to_azure_blob
@@ -355,3 +356,37 @@ async def update_notification_flags(
     db.commit()
     db.refresh(device)
     return {"message": "Notification settings updated successfully"}
+
+@router.post("/contacts/sync")
+def toggle_sync_contacts(request: ToggleContactsSyncRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    user_device = db.query(UserDevice).filter_by(device_id=request.device_id, user_id=current_user.id).first()
+    if not user_device:
+        raise HTTPException(status_code=404, detail="Device not found.")
+
+    user_device.sync_contacts = request.sync_contacts
+
+    if request.sync_contacts:
+        # Remove old contacts (if any)
+        db.query(UserDeviceContact).filter_by(user_device_id=user_device.id).delete()
+
+        # Insert new contacts
+        for contact in request.contacts:
+            db.add(UserDeviceContact(
+                user_device_id=user_device.id,
+                name=contact.name.strip(),
+                phone_number=str(contact.phone_number).strip()
+            ))
+    else:
+        # Delete all contacts if sync is disabled
+        db.query(UserDeviceContact).filter_by(user_device_id=user_device.id).delete()
+
+    db.commit()
+    return {"message": f"Contacts sync {'enabled' if request.sync_contacts else 'disabled'} successfully."}
+
+@router.get("/contacts", response_model=List[ContactIn])
+def get_synced_contacts(device_id: str, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    user_device = db.query(UserDevice).filter_by(device_id=device_id, user_id=current_user.id).first()
+    if not user_device:
+        raise HTTPException(status_code=404, detail="Device not found.")
+    contacts = db.query(UserDeviceContact).filter_by(user_device_id=user_device.id).all()
+    return contacts

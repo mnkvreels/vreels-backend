@@ -1,8 +1,8 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint, String, Enum
+from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint, String, Enum, NVARCHAR
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.database import Base
-from ..reports.enums import ReportReasonEnum
+from ..reports.enums import ReportEnum
 
 class ReportReason(Base):
     __tablename__ = "report_reasons"
@@ -18,7 +18,7 @@ class ReportPost(Base):
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
     reason = relationship("ReportReason", backref="report_posts")
-    description = Column(String(256), nullable=True)
+    description = Column(NVARCHAR(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -32,7 +32,7 @@ class ReportUser(Base):
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
     reason = relationship("ReportReason", backref="report_users")
-    description = Column(String(256), nullable=True)
+    description = Column(NVARCHAR(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -47,13 +47,21 @@ class ReportComment(Base):
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
     reason = relationship("ReportReason", backref="report_comments")
-    description = Column(String(256), nullable=True)
+    description = Column(NVARCHAR(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint("comment_id", "reported_by", name="uix_comment_report"),
     )
 
+class UserAppReport(Base):
+    __tablename__ = "user_app_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporting_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    report_reason = Column(Enum(ReportEnum), nullable=False, default=ReportEnum.BUG)
+    description = Column(NVARCHAR(256), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 # class ReportChat(Base):
 #     __tablename__ = "report_chats"

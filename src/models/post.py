@@ -1,5 +1,5 @@
 from requests import Session
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum, Interval, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Table, func, Enum, Interval, Boolean, UniqueConstraint, NVARCHAR
 from sqlalchemy.orm import relationship, backref
 from datetime import datetime, timezone, timedelta
 from src.database import Base
@@ -38,7 +38,7 @@ class Comment(Base):
     __tablename__ = "comments"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    content = Column(Text)
+    content = Column(NVARCHAR(max))
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     report_count = Column(Integer, default=0)
 
@@ -53,7 +53,7 @@ class Post(Base):
     __tablename__ = "posts"
 
     id = Column(Integer, primary_key=True, index=True)
-    content = Column(String)
+    content = Column(NVARCHAR(max))
     media = Column(String)
     location = Column(String)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
@@ -62,7 +62,7 @@ class Post(Base):
     report_count = Column(Integer, default=0)
     views_count = Column(Integer, default=0)  # NEW
     save_count = Column(Integer, default=0)   # NEW
-    category_of_content = Column(String(100), nullable=True)  # NEW
+    category_of_content = Column(NVARCHAR(100), nullable=True)  # NEW
     media_type = Column(String(50), nullable=True)  # NEW
     author_id = Column(Integer, ForeignKey("users.id"))
     author = relationship("User", back_populates="posts")
@@ -92,7 +92,7 @@ class Hashtag(Base):
     __tablename__ = "hashtags"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True)
+    name = Column(NVARCHAR(255), unique=True)
 
     posts = relationship("Post", secondary="post_hashtags", back_populates="hashtags")
 
@@ -104,7 +104,7 @@ class UserSavedPosts(Base):
     saved_post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     # Post attributes to be saved
-    content = Column(String)
+    content = Column(NVARCHAR(255))
     media = Column(String)
     location = Column(String)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
