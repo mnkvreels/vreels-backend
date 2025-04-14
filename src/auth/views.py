@@ -117,7 +117,7 @@ async def update_profile(
     # Check if a new profile pic is uploaded
     if profile_pic:
         # Upload to Azure and get the URL
-        new_profile_pic_url = await upload_to_azure_blob(
+        new_profile_pic_url, media_type = await upload_to_azure_blob(
             profile_pic, current_user.username, str(current_user.id)
         )
         # Set new profile pic URL to update
