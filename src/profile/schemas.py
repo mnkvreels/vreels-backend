@@ -34,3 +34,10 @@ class FollowingList(BaseModel):
 
 class FollowersList(BaseModel):
     followers: list[UserSchema] = []
+
+
+class SuggestedUser(BaseModel):
+    id: int
+    username: str
+    full_name: Optional [str] = None
+    profile_picture_url: Optional [str]  = None

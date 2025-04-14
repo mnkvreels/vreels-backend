@@ -180,3 +180,99 @@ async def check_follow_svc(db: Session, current_user: str, user: str):
     if db_following:
         return True
     return False
+
+'''
+# Suggested followers (friends-of-friends)
+async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
+    try:
+        # Step 1: Get the users current user is following
+        following = (
+            db.query(Follow.following_id)
+            .filter(Follow.follower_id == user_id)
+            .distinct()
+            .all()
+        )
+        following_ids = [f[0] for f in following]
+        print(following_ids)
+        if not following_ids:
+            return []
+
+        # Step 2: Get second-degree connections (users followed by people the user follows)
+        second_degree = (
+            db.query(User)
+            .join(Follow, Follow.following_id == User.id)
+            .filter(
+                Follow.follower_id.in_(following_ids),
+                Follow.following_id != user_id,
+                ~Follow.following_id.in_(
+                    db.query(Follow.following_id).filter(Follow.follower_id == user_id)
+                )
+            )
+            .distinct(User.id)
+            .limit(limit)
+            .all()
+        )
+        print(second_degree)
+
+        suggestions = []
+        for user in second_degree:
+            suggestions.append({
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.name,
+                "profile_picture_url": user.profile_pic
+            })
+
+        return suggestions
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to fetch suggested users.")
+'''
+
+async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
+    try:
+        # First-degree connections (people the user is already following)
+        following_ids = db.query(Follow.following_id).filter(Follow.follower_id == user_id).all()
+        following_ids = [fid[0] for fid in following_ids]
+
+        # Scenario 1: Friends-of-Friends
+        second_degree_users = (
+            db.query(User)
+            .join(Follow, Follow.following_id == User.id)
+            .filter(
+                Follow.follower_id.in_(following_ids),
+                Follow.following_id != user_id,
+                ~Follow.following_id.in_(following_ids)
+            )
+            .distinct(User.id)
+        )
+
+        # Scenario 2: People who follow current user but user is not following back
+        followers_not_followed_back = (
+            db.query(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .filter(
+                Follow.following_id == user_id,
+                ~Follow.follower_id.in_(following_ids),
+                Follow.follower_id != user_id
+            )
+            .distinct(User.id)
+        )
+
+        # Combine both queries using `union`
+        combined = second_degree_users.union(followers_not_followed_back).limit(limit).all()
+
+        # Final suggestion list
+        suggestions = []
+        for user in combined:
+            suggestions.append({
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.name,
+                "profile_picture_url": user.profile_pic
+            })
+
+        return suggestions
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch suggestions: {str(e)}")

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, status, Depends, HTTPException
+from fastapi import APIRouter, status, Depends, HTTPException, Query
+from typing import List
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from .schemas import Profile, FollowersList, FollowingList
+from .schemas import Profile, FollowersList, FollowingList, SuggestedUser
 from .service import (
     get_followers_svc,
     get_following_svc,
@@ -10,6 +11,7 @@ from .service import (
     unfollow_svc,
     check_follow_svc,
     existing_user,
+    get_suggested_users_svc,
 )
 from ..auth.service import get_current_user, get_user_by_username, send_notification_to_user
 from ..models.user import User, UserDevice
@@ -121,3 +123,16 @@ async def get_following_by_userid(request: UserRequest, db: Session = Depends(ge
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token"
         )
     return await get_following_svc(db, user.id)
+
+
+
+@router.get("/suggested", response_model=List[SuggestedUser])
+async def suggested_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(10)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    return await get_suggested_users_svc(db, current_user.id, limit)
