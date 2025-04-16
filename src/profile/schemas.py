@@ -12,6 +12,10 @@ class Profile(UserBase):
     account_type: Optional[AccountTypeEnum] = None
     followers_count: Optional[int] = 0
     following_count: Optional[int] = 0
+    suggested_follower_count: Optional[int] = 0
+    is_following: bool
+    is_blocked: bool
+
 
     class Config:
         orm_mode = True
@@ -41,3 +45,7 @@ class SuggestedUser(BaseModel):
     username: str
     full_name: Optional [str] = None
     profile_picture_url: Optional [str]  = None
+
+class SuggestedUserResponse(BaseModel):
+    total_count: int
+    suggested_users: list[SuggestedUser]

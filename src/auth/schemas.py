@@ -41,6 +41,7 @@ class UserUpdate(BaseModel):
     account_type: Optional[AccountTypeEnum] = None
     followers_count: Optional[int]
     following_count: Optional[int]
+    suggested_follower_count: Optional[int]
 
 
 # Full user profile including the created date and ID, combining UserBase and UserUpdate

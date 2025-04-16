@@ -33,8 +33,8 @@ async def follow_svc(db: Session, follower: str, following: str):
         db.add(db_follow)
 
         # Recalculate follower and following counts dynamically
-        db_follower.following_count += 1
-        db_following.followers_count += 1
+        db_follower.following_count = db.query(Follow).filter(Follow.follower_id == db_follower.id).count()
+        db_following.followers_count = db.query(Follow).filter(Follow.following_id == db_following.id).count()
 
         # Create a follow activity
         follow_activity = Activity(
@@ -78,8 +78,8 @@ async def unfollow_svc(db: Session, follower: str, following: str):
         db.delete(db_follow)
 
         # Recalculate follower and following counts dynamically
-        db_follower.following_count -= 1
-        db_following.followers_count -= 1
+        db_follower.following_count = db.query(Follow).filter(Follow.follower_id == db_follower.id).count()
+        db_following.followers_count = db.query(Follow).filter(Follow.following_id == db_following.id).count()
 
         db.commit()
         return {"message": f"You have unfollowed {db_following.username}."}
@@ -181,54 +181,6 @@ async def check_follow_svc(db: Session, current_user: str, user: str):
         return True
     return False
 
-'''
-# Suggested followers (friends-of-friends)
-async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
-    try:
-        # Step 1: Get the users current user is following
-        following = (
-            db.query(Follow.following_id)
-            .filter(Follow.follower_id == user_id)
-            .distinct()
-            .all()
-        )
-        following_ids = [f[0] for f in following]
-        print(following_ids)
-        if not following_ids:
-            return []
-
-        # Step 2: Get second-degree connections (users followed by people the user follows)
-        second_degree = (
-            db.query(User)
-            .join(Follow, Follow.following_id == User.id)
-            .filter(
-                Follow.follower_id.in_(following_ids),
-                Follow.following_id != user_id,
-                ~Follow.following_id.in_(
-                    db.query(Follow.following_id).filter(Follow.follower_id == user_id)
-                )
-            )
-            .distinct(User.id)
-            .limit(limit)
-            .all()
-        )
-        print(second_degree)
-
-        suggestions = []
-        for user in second_degree:
-            suggestions.append({
-                "id": user.id,
-                "username": user.username,
-                "full_name": user.name,
-                "profile_picture_url": user.profile_pic
-            })
-
-        return suggestions
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to fetch suggested users.")
-'''
-
 async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
     try:
         # First-degree connections (people the user is already following)
@@ -259,9 +211,32 @@ async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
             .distinct(User.id)
         )
 
-        # Combine both queries using `union`
-        combined = second_degree_users.union(followers_not_followed_back).limit(limit).all()
+        # Combine both queries using union
+        #combined = second_degree_users.union(followers_not_followed_back).limit(limit).all()
+        # Combine both
+        combined_query = second_degree_users.union(followers_not_followed_back).distinct(User.id)
 
+        # ✅ Get total count first (before limiting)
+        total_count = combined_query.count()
+
+        # ✅ Get limited results
+        combined_results = combined_query.limit(limit).all()
+
+        # Build response
+        suggestions = []
+        for user in combined_results:
+            suggestions.append({
+                "id": user.id,
+                "username": user.username,
+                "full_name": user.name,
+                "profile_picture_url": user.profile_pic
+            })
+
+        return {
+            "total_count": total_count,
+            "suggested_users": suggestions
+        }
+        '''
         # Final suggestion list
         suggestions = []
         for user in combined:
@@ -273,6 +248,8 @@ async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
             })
 
         return suggestions
+        '''
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch suggestions: {str(e)}")
+    
