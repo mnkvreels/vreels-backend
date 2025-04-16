@@ -3,7 +3,8 @@ from typing import List
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from .schemas import Profile, FollowersList, FollowingList, SuggestedUser
+from src.models.user import BlockedUsers
+from .schemas import Profile, FollowersList, FollowingList, SuggestedUser,SuggestedUserResponse
 from .service import (
     get_followers_svc,
     get_following_svc,
@@ -31,28 +32,66 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
     db_user = await existing_user(db, request.username)
     if not db_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Invalid username"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid username")
+
+
     requesting_user = db.query(User).filter(User.username == request.requesting_username).first()
-    if requesting_user and requesting_user.id == db_user.id:
-        return db_user
-    if db_user.account_type == AccountTypeEnum.PRIVATE:
-        is_follower = db.query(Follow).filter(
-            Follow.following_id == db_user.id,
-            Follow.follower_id == requesting_user.id
-        ).first()
-        
-        if not is_follower:
-            # Return limited profile (just public fields)
-            return {
-                "username": db_user.username,
-                "name": db_user.name,
-                "profile_pic": db_user.profile_pic,
-                "account_type": db_user.account_type,
-                "is_private": True,
-            }
-    return db_user
+    if not requesting_user:
+        raise HTTPException(status_code=404, detail="Requesting user not found")
+
+    # ✅ Check if following
+    is_following = db.query(Follow).filter(
+        Follow.follower_id == requesting_user.id,
+        Follow.following_id == db_user.id
+    ).first() is not None
+
+    # ✅ Check if blocked
+    is_blocked = db.query(BlockedUsers).filter(
+        BlockedUsers.blocker_id == requesting_user.id,
+        BlockedUsers.blocked_id == db_user.id
+    ).first() is not None
+
+    # ✅ Always calculate this before returning anything
+    target_followers_subq = db.query(Follow.follower_id).filter(
+        Follow.following_id == db_user.id
+    ).subquery()
+
+    suggested_follower_count = db.query(Follow).filter(
+        Follow.follower_id == requesting_user.id,
+        Follow.following_id.in_(target_followers_subq)
+    ).count()
+
+    # ✅ If same user (viewing own profile)
+    if requesting_user.id == db_user.id:
+        return {
+            **db_user.__dict__,
+            "is_following": False,
+            "is_blocked": False,
+            "suggested_follower_count": 0
+        }
+
+    # ✅ If private and not following — return limited profile + flags
+    if db_user.account_type == AccountTypeEnum.PRIVATE and not is_following:
+        return {
+            "username": db_user.username,
+            "name": db_user.name,
+            "profile_pic": db_user.profile_pic,
+            "account_type": db_user.account_type,
+            "is_private": True,
+            "is_following": is_following,
+            "is_blocked": is_blocked,
+            "suggested_follower_count": suggested_follower_count
+        }
+
+    # ✅ Full profile
+    return {
+        **db_user.__dict__,
+        "is_following": is_following,
+        "is_blocked": is_blocked,
+        "suggested_follower_count": suggested_follower_count
+    }
+
+
 
 
 @router.post("/follow", status_code=status.HTTP_200_OK)
@@ -149,7 +188,7 @@ async def get_following_by_userid(request: UserRequest, db: Session = Depends(ge
 
 
 
-@router.get("/suggested", response_model=List[SuggestedUser])
+@router.get("/suggested", response_model=SuggestedUserResponse)
 async def suggested_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
