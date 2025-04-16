@@ -58,6 +58,7 @@ class PostCreate(BaseModel):
     visibility: VisibilityEnum = VisibilityEnum.public
     category_of_content: Optional[str]
     media_type: Optional[str]
+    thumbnail: Optional[str]
 
     class Config:
         orm_mode = True
@@ -98,3 +99,23 @@ class MediaInteractionRequest(BaseModel):
     watched_time: int  # in seconds
     media_type: MediaTypeEnum
     video_length: Optional[int] = 0  # nullable for images
+    
+class PostResponse(BaseModel):
+    id: int
+    content: Optional[str]
+    media: Optional[str]
+    location: Optional[str]
+    created_at: datetime
+    visibility: str
+    category_of_content: Optional[str]
+    media_type: Optional[str]
+    thumbnail: Optional[str]
+    author_id: int
+    likes_count: int
+    comments_count: int
+    views_count: int
+    save_count: int
+    share_count: int
+
+    class Config:
+        orm_mode = True  # This is critical to allow Pydantic to work with ORM objects

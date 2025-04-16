@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import timedelta
 from ..database import get_db
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -75,7 +75,7 @@ class CommentRequest(BaseModel):
 # Regex pattern to check if a string is a valid URL
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_200_OK, response_model=PostResponse)
 async def create_post(
     visibility: VisibilityEnum = Form(VisibilityEnum.public),
     content: Optional[str] = Form(None),
@@ -93,14 +93,21 @@ async def create_post(
     file_url = None
     if file:
         try:
-            file_url, media_type = await upload_to_azure_blob(file,user.username,str(user.id))
+            file_url, media_type, thumbnail_url = await upload_to_azure_blob(file,user.username,str(user.id))
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         
-    post = PostCreate(content=content, location=location, visibility=visibility, category_of_content=category_of_content, media_type=media_type)
+    post = PostCreate(
+        content=content,
+        location=location,
+        visibility=visibility,
+        category_of_content=category_of_content,
+        media_type=media_type,
+        thumbnail=thumbnail_url
+    )
 
     # Create the post with the file URL (if any)
-    db_post = await create_post_svc(db, post, current_user.id, file_url)
+    return await create_post_svc(db, post, current_user.id, file_url)
 
     # Fetch followers of the user
     # followers = await get_followers_svc(db, current_user.id)
@@ -121,8 +128,6 @@ async def create_post(
     #     except Exception as e:
     #         # Log the error but don't raise it to ensure the post share is still processed
     #         print(f"Failed to send notification: {str(e)}")
-    
-    return db_post
 
 @router.patch("/edit/{post_id}", status_code=status.HTTP_200_OK)
 async def edit_post(
@@ -592,7 +597,7 @@ async def seed_pexels_posts(
                         file=file_data,
                         content_type=mime_type or "application/octet-stream"
                     )
-                    azure_url = await upload_to_azure_blob(upload_file, current_user.username, str(current_user.id))
+                    azure_url, media_type, thumbnail_url = await upload_to_azure_blob(upload_file, current_user.username, str(current_user.id))
 
                 post = PostCreate(
                     content=f"📸 Auto post from Pexels: {image.get('url')}",
@@ -620,12 +625,13 @@ async def seed_pexels_posts(
                         file=file_data,
                         content_type=mime_type or "application/octet-stream"
                     )
-                    azure_url = await upload_to_azure_blob(upload_file, current_user.username, str(current_user.id))
+                    azure_url, media_type, thumbnail_url = await upload_to_azure_blob(upload_file, current_user.username, str(current_user.id))
 
                 post = PostCreate(
                     content=f"🎥 Auto post from Pexels: {video.get('url')}",
                     location="Test Location",
-                    visibility=VisibilityEnum.public
+                    visibility=VisibilityEnum.public,
+                    thumbnail=thumbnail_url
                 )
                 created_post = await create_post_svc(db, post, current_user.id, azure_url)
                 results.append({"type": "video", "id": created_post.id, "url": azure_url})

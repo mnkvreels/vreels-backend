@@ -38,7 +38,7 @@ class Comment(Base):
     __tablename__ = "comments"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    content = Column(NVARCHAR(max))
+    content = Column(NVARCHAR("max"))
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
     report_count = Column(Integer, default=0)
 
@@ -53,7 +53,7 @@ class Post(Base):
     __tablename__ = "posts"
 
     id = Column(Integer, primary_key=True, index=True)
-    content = Column(NVARCHAR(max))
+    content = Column(NVARCHAR("max"))
     media = Column(String)
     location = Column(String)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
@@ -67,6 +67,7 @@ class Post(Base):
     author_id = Column(Integer, ForeignKey("users.id"))
     author = relationship("User", back_populates="posts")
     visibility = Column(Enum(VisibilityEnum), nullable=False, default="public")
+    thumbnail = Column(String, nullable=True)
     # Many-to-Many Relationships
     liked_by_users = relationship("User", secondary="post_likes", back_populates="liked_posts")
     hashtags = relationship("Hashtag", secondary="post_hashtags", back_populates="posts")
