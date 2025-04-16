@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from sqlalchemy import VARCHAR
+from datetime import datetime
 from .enums import ReportReasonEnum, ReportEnum
 from typing import Optional
 
@@ -17,6 +17,14 @@ class ReportCommentRequest(BaseModel):
     comment_id: int
     description: Optional[str] = None
     reason: ReportReasonEnum
+
+class ReportReasonResponse(BaseModel):
+    report_reason_id: int
+    report_reason_name: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
 
 class ReportIssueRequest(BaseModel):
     report_reason: ReportEnum

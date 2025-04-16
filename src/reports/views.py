@@ -5,13 +5,15 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth.service import get_current_user
 from ..models.user import User
-from ..models.report import UserAppReport
+from ..models.report import UserAppReport, ReportReason
 from .schemas import (
     ReportPostRequest,
     ReportUserRequest,
     ReportCommentRequest,
-    ReportIssueRequest
+    ReportIssueRequest,
+    ReportReasonResponse
 )
+from typing import List
 from .service import (
     report_post_svc,
     report_user_svc,
@@ -37,6 +39,10 @@ async def report_user(data: ReportUserRequest, db: Session = Depends(get_db), cu
 async def report_comment(data: ReportCommentRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await report_comment_svc(data.comment_id, current_user.id, data.reason, data.description, db)
 
+@router.get("/report-reasons", response_model=List[ReportReasonResponse])
+async def get_report_reasons(db: Session = Depends(get_db)):
+    reasons = db.query(ReportReason).order_by(ReportReason.created_at.desc()).all()
+    return reasons
 
 # @router.post("/chat")
 # async def report_chat(data: ReportChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
