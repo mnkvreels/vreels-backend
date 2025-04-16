@@ -17,7 +17,7 @@ class ReportPost(Base):
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
-    reason = relationship("ReportReason", backref="report_posts")
+    report_reason = Column(NVARCHAR(255), nullable=True)
     description = Column(NVARCHAR(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -31,7 +31,7 @@ class ReportUser(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
-    reason = relationship("ReportReason", backref="report_users")
+    report_reason = Column(NVARCHAR(255), nullable=True)
     description = Column(NVARCHAR(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -46,7 +46,7 @@ class ReportComment(Base):
     comment_id = Column(Integer, ForeignKey("comments.id", ondelete="CASCADE"), nullable=False)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
-    reason = relationship("ReportReason", backref="report_comments")
+    report_reason = Column(NVARCHAR(255), nullable=True)
     description = Column(NVARCHAR(256), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

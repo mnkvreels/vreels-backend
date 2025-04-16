@@ -8,6 +8,11 @@ from .enums import ReportReasonEnum
 
 async def report_post_svc(post_id: int, reported_by: int, reason: str, description: str, db: Session):
     try:
+        # Check if the post exists
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            raise HTTPException(status_code=400, detail="Post does not exist.")
+        
         existing_report = db.query(ReportPost).filter(
             ReportPost.post_id == post_id,
             ReportPost.reported_by == reported_by
@@ -15,17 +20,17 @@ async def report_post_svc(post_id: int, reported_by: int, reason: str, descripti
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this post.")
 
-        # Insert reason first
-        report_reason = ReportReason(report_reason_name=reason)
-        db.add(report_reason)
-        db.commit()
-        db.refresh(report_reason)
+        # Check if the reason exists, if not raise an exception
+        report_reason = db.query(ReportReason).filter(ReportReason.report_reason_name == reason).first()
+        if not report_reason:
+            raise HTTPException(status_code=400, detail="Invalid report reason.")
 
         # Insert report
         report = ReportPost(
             post_id=post_id,
             reported_by=reported_by,
             report_reason_id=report_reason.report_reason_id,
+            report_reason=report_reason.report_reason_name,
             description=description
         )
         db.add(report)
@@ -35,6 +40,8 @@ async def report_post_svc(post_id: int, reported_by: int, reason: str, descripti
 
         db.commit()
 
+    except HTTPException as e:  # Catch HTTPException separately
+        raise e  # Re-raise the HTTPException with the specific message
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error reporting post: {str(e)}")
@@ -44,23 +51,29 @@ async def report_post_svc(post_id: int, reported_by: int, reason: str, descripti
 
 async def report_user_svc(user_id: int, reported_by: int, reason: str,  description: str, db: Session):
     try:
+        # Check if the user exists
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=400, detail="User does not exist.")
+        
         existing_report = db.query(ReportUser).filter(
             ReportUser.user_id == user_id,
             ReportUser.reported_by == reported_by
         ).first()
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this user.")
-        # Insert reason
-        report_reason = ReportReason(report_reason_name=reason)
-        db.add(report_reason)
-        db.commit()
-        db.refresh(report_reason)
+
+        # Check if the reason exists, if not raise an exception
+        report_reason = db.query(ReportReason).filter(ReportReason.report_reason_name.ilike(reason)).first()
+        if not report_reason:
+            raise HTTPException(status_code=400, detail="Invalid report reason.")
 
         # Insert report
         report = ReportUser(
             user_id=user_id,
             reported_by=reported_by,
             report_reason_id=report_reason.report_reason_id,
+            report_reason=report_reason.report_reason_name,
             description=description
         )
         db.add(report)
@@ -70,6 +83,8 @@ async def report_user_svc(user_id: int, reported_by: int, reason: str,  descript
         
         db.commit()
     
+    except HTTPException as e:  # Catch HTTPException separately
+        raise e  # Re-raise the HTTPException with the specific message
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error reporting user: {str(e)}")
@@ -79,6 +94,11 @@ async def report_user_svc(user_id: int, reported_by: int, reason: str,  descript
 
 async def report_comment_svc(comment_id: int, reported_by: int, reason: str,  description: str, db: Session):
     try:
+        # Check if the comment exists
+        comment = db.query(Comment).filter(Comment.id == comment_id).first()
+        if not comment:
+            raise HTTPException(status_code=400, detail="Comment does not exist.")
+
         existing_report = db.query(ReportComment).filter(
             ReportComment.comment_id == comment_id,
             ReportComment.reported_by == reported_by
@@ -87,17 +107,17 @@ async def report_comment_svc(comment_id: int, reported_by: int, reason: str,  de
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this comment.")
 
-        # Insert reason
-        report_reason = ReportReason(report_reason_name=reason)
-        db.add(report_reason)
-        db.commit()
-        db.refresh(report_reason)
+        # Check if the reason exists, if not raise an exception
+        report_reason = db.query(ReportReason).filter(ReportReason.report_reason_name.ilike(reason)).first()
+        if not report_reason:
+            raise HTTPException(status_code=400, detail="Invalid report reason.")
 
         # Insert report
         report = ReportComment(
             comment_id=comment_id,
             reported_by=reported_by,
             report_reason_id=report_reason.report_reason_id,
+            report_reason=report_reason.report_reason_name,
             description=description
         )
         db.add(report)
@@ -107,6 +127,8 @@ async def report_comment_svc(comment_id: int, reported_by: int, reason: str,  de
             comment.report_count = (comment.report_count or 0) + 1
         db.commit()
     
+    except HTTPException as e:  # Catch HTTPException separately
+        raise e  # Re-raise the HTTPException with the specific message
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Error reporting comment: {str(e)}")
