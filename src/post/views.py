@@ -420,8 +420,8 @@ async def get_comments_for_post(
 
 # Get public posts
 @router.get("/public", status_code=status.HTTP_200_OK)
-async def get_public_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_public_posts_svc(db,current_user.id)
+async def get_public_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_public_posts_svc(db, current_user, page, limit)
     if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No public posts found."
@@ -430,8 +430,8 @@ async def get_public_posts(db: Session = Depends(get_db),current_user: User = De
 
 # Get private posts (only visible to uuser)
 @router.get("/private", status_code=status.HTTP_200_OK)
-async def get_private_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_private_posts_svc(db, current_user.id)
+async def get_private_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_private_posts_svc(db, current_user, page, limit)
     if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No private posts found."
@@ -440,8 +440,8 @@ async def get_private_posts(db: Session = Depends(get_db),current_user: User = D
 
 # get visible only to friends posts
 @router.get("/friends", status_code=status.HTTP_200_OK)
-async def get_friends_posts(db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_friends_posts_svc(db, current_user.id)
+async def get_friends_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_friends_posts_svc(db, current_user, page, limit)
 
     if not posts:
         raise HTTPException(
@@ -452,8 +452,8 @@ async def get_friends_posts(db: Session = Depends(get_db),current_user: User = D
 
 # get posts by visibility
 @router.get("/posts", status_code=status.HTTP_200_OK)
-async def get_posts_by_visibility(visibility: VisibilityEnum, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    posts = await get_posts_by_visibility_svc(db, current_user.id, visibility)
+async def get_posts_by_visibility(page: int, limit: int, visibility: VisibilityEnum, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    posts = await get_posts_by_visibility_svc(db, current_user, visibility, page, limit)
 
     if not posts:
         raise HTTPException(
