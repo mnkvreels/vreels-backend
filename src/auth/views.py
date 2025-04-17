@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, Form, UploadFile,
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-from src.models.user import User, OTP, UserDevice, UserDeviceContact
+from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn
 from src.database import get_db
 from typing import List
@@ -73,8 +73,21 @@ async def update_device_token(request: DeviceTokenRequest, db: Session = Depends
     return result
 
 @router.get("/profile", status_code=status.HTTP_200_OK, response_model=UserSchema)
-async def profile(current_user: User = Depends(get_current_user)):
-    return current_user
+async def profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Followers of the current user
+    current_user_following_ids = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id).subquery()
+
+    # Suggested followers (mutuals)
+    suggested_follower_count = db.query(Follow).filter(
+        Follow.follower_id.in_(current_user_following_ids),
+        Follow.following_id == current_user.id
+    ).count()
+
+    # Return profile with additional attribute
+    return {
+        **current_user.__dict__,
+        "suggested_follower_count": suggested_follower_count
+    }
 
 
 # @router.put("/profile", status_code=status.HTTP_204_NO_CONTENT)
