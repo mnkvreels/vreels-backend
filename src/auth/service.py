@@ -447,42 +447,47 @@ async def delete_account_svc(db: Session, user_id: int) -> bool:
 
     return True
 
-def update_device_token_svc(user_id: int, device_id: str, device_token: str, platform: str, db: Session):
-    # Check if the device already exists for the user
-    existing_device = db.query(UserDevice).filter(UserDevice.user_id == user_id, UserDevice.device_id == device_id).first()
-
-    if existing_device:
-        # Update the existing device record
-        existing_device.device_token = device_token
-        existing_device.platform = platform.lower()
-        db.commit()
-        db.refresh(existing_device)
-        return {"message": "Device token updated successfully!"}
-    else:
-        # Add a new device record
-        new_device = UserDevice(
-            user_id=user_id,
-            device_id=device_id,
-            device_token=device_token,
-            platform=platform.lower(),
-            notify_likes=True,
-            notify_comments=True,
-            notify_share = True,
-            notify_calls=True,
-            notify_messages=True,
-            notify_follow=True,
-            notify_posts=True,
-            notify_status=True,
-        )
-        db.add(new_device)
-
+async def update_device_token_svc(user_id: int, device_id: str, device_token: str, platform: str, db: Session):
     try:
-        db.commit()  # Commit the changes to the database
-        db.refresh(new_device)  # Refresh the session for the new device
-        return {"message": "Device added successfully!"}
+        # Check for existing device using only device_id
+        existing_device = db.query(UserDevice).filter(UserDevice.device_id == device_id).first()
+
+        if existing_device:
+            # Update the device's user_id and token if necessary
+            existing_device.user_id = user_id
+            existing_device.device_token = device_token
+            existing_device.platform = platform.lower()
+            db.commit()
+            db.refresh(existing_device)
+            return {"message": "Device token updated successfully!"}
+        else:
+            # Add a new device record
+            new_device = UserDevice(
+                user_id=user_id,
+                device_id=device_id,
+                device_token=device_token,
+                platform=platform.lower(),
+                notify_likes=True,
+                notify_comments=True,
+                notify_share=True,
+                notify_calls=True,
+                notify_messages=True,
+                notify_follow=True,
+                notify_posts=True,
+                notify_status=True,
+                sync_contacts=False,
+            )
+            db.add(new_device)
+            db.commit()
+            db.refresh(new_device)
+            return {"message": "Device added successfully!"}
+
     except Exception as e:
-        db.rollback()  # Rollback in case of an error
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update device token")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update device token: {str(e)}"
+        )
 
 async def optional_current_user(request: Request) -> Optional[User]:
     try:

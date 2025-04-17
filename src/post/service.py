@@ -687,11 +687,14 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             Post.content,
             Post.media,
             Post.location,
+            Post.author_id,
             Post.created_at,
             Post.likes_count,
             Post.comments_count,
             Post.save_count,
             Post.views_count,
+            Post.report_count,
+            Post.thumbnail,
             Post.category_of_content,
             Post.media_type,
             Post.share_count,
@@ -792,62 +795,128 @@ async def get_received_posts_svc(db: Session, user_id: int):
         """Fetches posts that a specific user has shared."""
         return db.query(UserSharedPosts).filter(UserSharedPosts.receiver_user_id == user_id).all()
 
-async def get_public_posts_svc(db: Session, user_id: int):
-    posts = db.query(Post).filter(Post.author_id == user_id, Post.visibility == "public").all()
-    return posts
+async def serialize_posts(posts, db: Session, current_user: User):
+    result = []
+    for post in posts:
+        post_dict = post.__dict__.copy()
+
+        # Get author username
+        username = db.query(User.username).filter(User.id == post.author_id).scalar()
+        post_dict["username"] = username
+
+        # Get hashtags
+        hashtags = (
+            db.query(Hashtag)
+            .join(post_hashtags)
+            .filter(post_hashtags.c.post_id == post.id)
+            .all()
+        )
+        post_dict["hashtags"] = [tag.name for tag in hashtags]
+
+        # Is liked
+        liked = (
+            db.query(Like)
+            .filter(Like.user_id == current_user.id, Like.post_id == post.id)
+            .first()
+        )
+        post_dict["is_liked"] = liked is not None
+
+        # Is saved
+        saved = (
+            db.query(UserSavedPosts)
+            .filter(UserSavedPosts.user_id == current_user.id, UserSavedPosts.saved_post_id == post.id)
+            .first()
+        )
+        post_dict["is_saved"] = saved is not None
+
+        # Update likes and comment counts
+        post.update_likes_and_comments_count(db)
+
+        result.append(post_dict)
+    return result
+
+async def get_public_posts_svc(db: Session, current_user: User, page: int, limit: int):
+    query = db.query(Post).filter(Post.visibility == "public", Post.author_id == current_user.id).order_by(desc(Post.created_at))
+    total_count = query.count()
+
+    posts = query.offset((page - 1) * limit).limit(limit).all()
+    data = await serialize_posts(posts, db, current_user)
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": data,
+    }
 
 
-async def get_private_posts_svc(db: Session, user_id: int):
-    posts = db.query(Post).filter(Post.author_id == user_id, Post.visibility == "private").all()
-    return posts
+async def get_private_posts_svc(db: Session, current_user: User, page: int, limit: int):
+    query = db.query(Post).filter(Post.author_id == current_user.id, Post.visibility == "private").order_by(desc(Post.created_at))
+    total_count = query.count()
+
+    posts = query.offset((page - 1) * limit).limit(limit).all()
+    data = await serialize_posts(posts, db, current_user)
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": data,
+    }
 
 
-async def get_friends_posts_svc(db: Session, user_id: int):
-    # Get IDs of followers who follow the current user
-    follower_ids = [
-        follow.follower_id
-        for follow in db.query(Follow).filter(Follow.following_id == user_id).all()
+async def get_friends_posts_svc(db: Session, current_user: User, page: int, limit: int):
+    following_ids = [
+        f.following_id for f in db.query(Follow).filter(Follow.follower_id == current_user.id)
     ]
 
-    # Get posts visible to friends by followers
-    posts = (
-        db.query(Post)
-        .filter(
-            Post.author_id.in_(follower_ids),  # Posts created by followers
-            Post.visibility == "friends",  # Only 'friends' posts
-        )
-        .all()
-    )
-    return posts
+    query = db.query(Post).filter(Post.author_id.in_(following_ids), Post.visibility == "friends").order_by(desc(Post.created_at))
+    total_count = query.count()
 
-async def get_posts_by_visibility_svc(db: Session, user_id: int, visibility: str):
+    posts = query.offset((page - 1) * limit).limit(limit).all()
+    data = await serialize_posts(posts, db, current_user)
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": data,
+    }
+
+
+async def get_posts_by_visibility_svc(db: Session, current_user: User, visibility: str, page: int, limit: int):
     try:
-        # Public posts - visible to everyone
+        query = db.query(Post)
+
         if visibility == "public":
-            posts = db.query(Post).filter(Post.visibility == "public").all()
+            query = query.filter(Post.visibility == "public").order_by(desc(Post.created_at))
 
-        # Private posts - visible only to the post author
         elif visibility == "private":
-            posts = db.query(Post).filter(
-                Post.author_id == user_id, Post.visibility == "private"
-            ).all()
+            query = query.filter(Post.author_id == current_user.id, Post.visibility == "private").order_by(desc(Post.created_at))
 
-        # Friends-only posts - visible to the user's followers
         elif visibility == "friends":
-            # Get IDs of followers (users following the current user)
-            follower_ids = [
-                follow.follower_id
-                for follow in db.query(Follow).filter(Follow.following_id == user_id).all()
+            following_ids = [
+                f.following_id for f in db.query(Follow).filter(Follow.follower_id == current_user.id)
             ]
+            query = query.filter(Post.author_id.in_(following_ids), Post.visibility == "friends").order_by(desc(Post.created_at))
 
-            # Get posts visible to followers
-            posts = db.query(Post).filter(Post.author_id.in_(follower_ids), Post.visibility == "friends").all()
-
-        # Invalid visibility option
         else:
             return None
 
-        return posts
+        total_count = query.count()
+        posts = query.offset((page - 1) * limit).limit(limit).all()
+        data = await serialize_posts(posts, db, current_user)
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": data,
+        }
 
     except SQLAlchemyError as e:
         print(f"Database error: {e}")

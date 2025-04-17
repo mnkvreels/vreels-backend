@@ -68,7 +68,7 @@ async def update_device_token(request: DeviceTokenRequest, db: Session = Depends
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
     # Call the service layer to update or add the device token
-    result = update_device_token_svc(user.id, request.device_id, request.device_token, request.platform, db)
+    result = await update_device_token_svc(user.id, request.device_id, request.device_token, request.platform, db)
     
     return result
 
