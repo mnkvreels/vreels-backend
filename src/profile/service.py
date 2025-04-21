@@ -11,82 +11,81 @@ from ..auth.service import get_user_from_user_id, existing_user
 async def follow_svc(db: Session, follower: str, following: str):
     if follower == following:
         raise HTTPException(status_code=400, detail="You cannot follow yourself.")
-    
-    db_follower = await existing_user(db, follower, "")
-    db_following = await existing_user(db, following, "")
-    if not db_follower or not db_following:
-        return {"error": "User not found."}
 
-    # Check if the follow relationship already exists
-    db_follow = (
-        db.query(Follow)
-        .filter_by(follower_id=db_follower.id, following_id=db_following.id)
-        .first()
-    )
-    if db_follow:
-        # Already following
-        return {"message": f"You are already following {db_following.username}."}
+    # ✅ Get session-bound user objects
+    db_follower = db.query(User).filter(User.username == follower).first()
+    db_following = db.query(User).filter(User.username == following).first()
+
+    if not db_follower or not db_following:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing = db.query(Follow).filter_by(
+        follower_id=db_follower.id,
+        following_id=db_following.id
+    ).first()
+
+    if existing:
+        return {"message": "Already following"}
 
     try:
-        # Create the follow relationship
-        db_follow = Follow(follower_id=db_follower.id, following_id=db_following.id)
-        db.add(db_follow)
+        # ✅ Create follow
+        follow = Follow(follower_id=db_follower.id, following_id=db_following.id)
+        db.add(follow)
+        db.flush()
 
-        # Recalculate follower and following counts dynamically
-        db_follower.following_count = db.query(Follow).filter(Follow.follower_id == db_follower.id).count()
-        db_following.followers_count = db.query(Follow).filter(Follow.following_id == db_following.id).count()
+        # ✅ Recalculate counts from fresh DB values
+        follower_count = db.query(Follow).filter(Follow.follower_id == db_follower.id).count()
+        following_count = db.query(Follow).filter(Follow.following_id == db_following.id).count()
 
-        # Create a follow activity
-        follow_activity = Activity(
-            username=following,
-            followed_username=db_follower.username,
-            followed_user_pic=db_follower.profile_pic,
-        )
-        db.add(follow_activity)
+        # ✅ Force SQLAlchemy to detect changes
+        db.query(User).filter(User.id == db_follower.id).update({"following_count": follower_count})
+        db.query(User).filter(User.id == db_following.id).update({"followers_count": following_count})
 
         db.commit()
-        return {"message": f"You are now following {db_following.username}."}
+        return {"message": "Followed successfully"}
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error following user: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Follow failed: {e}")
 
 
 # unfollow activity
 async def unfollow_svc(db: Session, follower: str, following: str):
     if follower == following:
         raise HTTPException(status_code=400, detail="You cannot unfollow yourself.")
-    
-    db_follower = await existing_user(db, follower, "")
-    db_following = await existing_user(db, following, "")
-    if not db_follower or not db_following:
-        return {"error": "User not found."}
 
-    # Check if the follow relationship exists
-    db_follow = (
-        db.query(Follow)
-        .filter_by(follower_id=db_follower.id, following_id=db_following.id)
-        .first()
-    )
-    if not db_follow:
-        # Not following, return error message
-        raise HTTPException(status_code=400, detail=f"You are not following {db_following.username}.")
+    db_follower = db.query(User).filter(User.username == follower).first()
+    db_following = db.query(User).filter(User.username == following).first()
+
+    if not db_follower or not db_following:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing = db.query(Follow).filter_by(
+        follower_id=db_follower.id,
+        following_id=db_following.id
+    ).first()
+
+    if not existing:
+        raise HTTPException(status_code=400, detail="You are not following this user.")
 
     try:
-        # Remove the follow relationship
-        db.delete(db_follow)
+        db.delete(existing)
+        db.flush()
 
-        # Recalculate follower and following counts dynamically
-        db_follower.following_count = db.query(Follow).filter(Follow.follower_id == db_follower.id).count()
-        db_following.followers_count = db.query(Follow).filter(Follow.following_id == db_following.id).count()
+        # ✅ Recalculate counts
+        follower_count = db.query(Follow).filter(Follow.follower_id == db_follower.id).count()
+        following_count = db.query(Follow).filter(Follow.following_id == db_following.id).count()
+
+        # ✅ Update directly in DB (ensures update is detected)
+        db.query(User).filter(User.id == db_follower.id).update({"following_count": follower_count})
+        db.query(User).filter(User.id == db_following.id).update({"followers_count": following_count})
 
         db.commit()
-        return {"message": f"You have unfollowed {db_following.username}."}
+        return {"message": "Unfollowed successfully"}
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error unfollowing user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unfollow failed: {e}")
 
 
 

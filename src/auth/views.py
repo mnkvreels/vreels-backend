@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Form, UploadFile, File
+from azure.core.exceptions import ResourceNotFoundError
+from urllib.parse import urlparse, unquote
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func ,literal_column, union_all
 from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn
 from src.database import get_db
 from typing import List
 from datetime import timedelta, datetime, timezone
 from .enums import AccountTypeEnum, GenderEnum
-from ..azure_blob import upload_to_azure_blob
+from ..azure_blob import upload_to_azure_blob,blob_service_client, AZURE_IMAGE_CONTAINER
 
 from src.auth.service import (
     get_current_user,
@@ -74,20 +77,42 @@ async def update_device_token(request: DeviceTokenRequest, db: Session = Depends
 
 @router.get("/profile", status_code=status.HTTP_200_OK, response_model=UserSchema)
 async def profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Followers of the current user
-    current_user_following_ids = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id).subquery()
+    try:
+        # Get list of user IDs the current user is following
+        following_ids = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id).all()
+        following_ids = [fid[0] for fid in following_ids]
 
-    # Suggested followers (mutuals)
-    suggested_follower_count = db.query(Follow).filter(
-        Follow.follower_id.in_(current_user_following_ids),
-        Follow.following_id == current_user.id
-    ).count()
+        # Friends-of-Friends (second-degree) - return user_id
+        second_degree_subq = (
+            db.query(Follow.following_id.label("user_id"))
+            .filter(
+                Follow.follower_id.in_(following_ids),
+                Follow.following_id != current_user.id,
+                ~Follow.following_id.in_(following_ids)
+            )
+        )
 
-    # Return profile with additional attribute
-    return {
-        **current_user.__dict__,
-        "suggested_follower_count": suggested_follower_count
-    }
+        # Users who follow current_user but are not followed back - return user_id
+        followers_not_followed_back_subq = (
+            db.query(Follow.follower_id.label("user_id"))
+            .filter(
+                Follow.following_id == current_user.id,
+                ~Follow.follower_id.in_(following_ids),
+                Follow.follower_id != current_user.id
+            )
+        )
+
+        # Combine the two with UNION and count distinct user_id
+        union_subq = second_degree_subq.union(followers_not_followed_back_subq).subquery()
+        suggested_follower_count = db.query(func.count(func.distinct(union_subq.c.user_id))).scalar()
+
+        return {
+            **current_user.__dict__,
+            "suggested_follower_count": suggested_follower_count
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching profile: {str(e)}")
 
 
 # @router.put("/profile", status_code=status.HTTP_204_NO_CONTENT)
@@ -139,6 +164,40 @@ async def update_profile(
     # Call the update service
     updated_user = await update_user_svc(db, current_user, user_update)
     return jsonable_encoder(updated_user)
+
+#Removing profile picture from the profile
+@router.put("/profile/remove-profile-pic", status_code=200)
+async def remove_profile_pic(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.profile_pic:
+        raise HTTPException(status_code=400, detail="No profile picture found to remove.")
+
+    try:
+        parsed_url = urlparse(current_user.profile_pic)
+        blob_path = unquote(parsed_url.path.lstrip(f"/{AZURE_IMAGE_CONTAINER}/"))
+
+        container_client = blob_service_client.get_container_client(AZURE_IMAGE_CONTAINER)
+        blob_client = container_client.get_blob_client(blob_path)
+
+        try:
+            blob_client.delete_blob()
+        except ResourceNotFoundError:
+            raise HTTPException(status_code=404, detail="Blob not found. Profile picture removed from DB.")
+
+        current_user.profile_pic = ""  # Set to empty string instead of None
+        db.commit()
+        db.refresh(current_user)
+
+        return {
+            "message": "Profile picture removed from Azure and profile successfully.",
+            "profile_pic": current_user.profile_pic
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
 
 # @router.post("/request-password-reset", status_code=status.HTTP_200_OK)
 # async def request_password_reset(request: ResetPasswordRequest, db: Session = Depends(get_db)):

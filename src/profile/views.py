@@ -66,8 +66,7 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
         return {
             **db_user.__dict__,
             "is_following": False,
-            "is_blocked": False,
-            "suggested_follower_count": 0
+            "is_blocked": False
         }
 
     # ✅ If private and not following — return limited profile + flags
@@ -79,16 +78,14 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
             "account_type": db_user.account_type,
             "is_private": True,
             "is_following": is_following,
-            "is_blocked": is_blocked,
-            "suggested_follower_count": suggested_follower_count
+            "is_blocked": is_blocked
         }
 
     # ✅ Full profile
     return {
         **db_user.__dict__,
         "is_following": is_following,
-        "is_blocked": is_blocked,
-        "suggested_follower_count": suggested_follower_count
+        "is_blocked": is_blocked
     }
 
 
