@@ -11,6 +11,7 @@ from ..auth.schemas import User as UserSchema
 from ..models.post import VisibilityEnum
 from ..models.activity import Activity
 from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime
 
 # create hashtag from posts' content
 # hey #fun
@@ -504,7 +505,7 @@ async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: 
         return False, "invalid user_id"
 
     # Create the comment
-    comment = Comment(content=content, post_id=post_id, user_id=user_id)
+    comment = Comment(content=content, post_id=post_id, user_id=user_id, created_at=datetime.now())
     db.add(comment)
     post.comments_count += 1
 
@@ -646,7 +647,8 @@ async def save_post_svc(db: Session, user_id: int, post_id: int):
         visibility=post.visibility,
     )
     db.add(saved_post)
-    post.save_count += 1
+    if post and post.save_count is not None and post.save_count > 0:
+        post.save_count += 1
     db.commit()
     db.refresh(saved_post)
 
@@ -665,7 +667,7 @@ async def unsave_post_svc(db: Session, user_id: int, post_id: int):
     db.delete(saved_post)
     # Decrement save_count for the related post
     post = db.query(Post).filter(Post.id == post_id).first()
-    if post and post.save_count > 0:
+    if post and post.save_count is not None and post.save_count > 0:
         post.save_count -= 1
         db.add(post)
     
