@@ -25,7 +25,7 @@ class Like(Base):
     __tablename__ = "likes"
     
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     user_id = Column(Integer, ForeignKey("users.id"))
     post_id = Column(Integer, ForeignKey("posts.id"))
@@ -39,7 +39,7 @@ class Comment(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     content = Column(NVARCHAR("max"))
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     report_count = Column(Integer, default=0)
 
     post_id = Column(Integer, ForeignKey("posts.id"))
@@ -56,7 +56,7 @@ class Post(Base):
     content = Column(NVARCHAR("max"))
     media = Column(String)
     location = Column(String)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
     report_count = Column(Integer, default=0)
@@ -103,12 +103,11 @@ class UserSavedPosts(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     saved_post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
     # Post attributes to be saved
     content = Column(NVARCHAR(255))
     media = Column(String)
     location = Column(String)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
     share_count = Column(Integer, default=0)
@@ -125,7 +124,7 @@ class UserSharedPosts(Base):
     sender_user_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"), nullable=False)
     receiver_user_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"), nullable=False)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     sender = relationship("User", foreign_keys=[sender_user_id], back_populates="shared_posts_sent")
     receiver = relationship("User", foreign_keys=[receiver_user_id], back_populates="shared_posts_received")
@@ -142,7 +141,7 @@ class MediaInteraction(Base):
     video_length = Column(Integer, nullable=True, default=timedelta(seconds=0))  # Length of video in seconds (nullable for images)
     skipped = Column(Boolean, default=False)  # Whether the user skipped the content
     # completed = Column(Boolean, default=False)  # Whether the user finished watching
-    created_at = Column(DateTime, default=datetime.now(timezone.utc))  # Timestamp of interaction
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))  # Timestamp of interaction
 
     user = relationship("User", back_populates="media_interactions")
     media = relationship("Post", back_populates="interactions")

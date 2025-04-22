@@ -30,14 +30,17 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 
 @router.get("/user")
 async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
-    db_user = await existing_user(db, request.username)
-    if not db_user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid username")
+    # ✅ Fetch both users at once
+    db_users = db.query(User).filter(
+        User.username.in_([request.username, request.requesting_username])
+    ).all()
 
+    user_map = {u.username: u for u in db_users}
+    db_user = user_map.get(request.username)
+    requesting_user = user_map.get(request.requesting_username)
 
-    requesting_user = db.query(User).filter(User.username == request.requesting_username).first()
-    if not requesting_user:
-        raise HTTPException(status_code=404, detail="Requesting user not found")
+    if not db_user or not requesting_user:
+        raise HTTPException(status_code=404, detail="User(s) not found")
 
     # ✅ Check if following
     is_following = db.query(Follow).filter(

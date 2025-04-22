@@ -1,17 +1,20 @@
-from sqlalchemy import VARCHAR, Column, Date, DateTime, Integer, String, Boolean, Enum, ForeignKey, BigInteger, NVARCHAR
+from sqlalchemy import VARCHAR, Column, Date, DateTime, Integer, String, Boolean, Enum, ForeignKey, BigInteger, NVARCHAR, Index
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship, backref
 from src.database import Base
 from src.auth.enums import GenderEnum, AccountTypeEnum
 
 class Follow(Base):
-    """
-    The Follow class represents a many-to-many relationship between users.
-    """
     __tablename__ = "follows"
+    __table_args__ = (
+        Index("ix_follows_follower_id", "follower_id"),
+        Index("ix_follows_following_id", "following_id"),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    follower_id = Column(Integer, ForeignKey('users.id'))
-    following_id = Column(Integer, ForeignKey('users.id'))
+    follower_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    following_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+
     follower_user = relationship("User", back_populates="following", foreign_keys=[follower_id])
     following_user = relationship("User", back_populates="followers", foreign_keys=[following_id])
 
@@ -57,10 +60,13 @@ class User(Base):
 
 class BlockedUsers(Base):
     __tablename__ = "blocked_users"
+    __table_args__ = (
+        Index("ix_blockedusers_blocker_blocked", "blocker_id", "blocked_id"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    blocker_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
-    blocked_id = Column(Integer, ForeignKey("users.id", ondelete="NO ACTION"))
+    blocker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    blocked_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
 # Database Model for OTP
 class OTP(Base):

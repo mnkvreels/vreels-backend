@@ -501,6 +501,10 @@ async def log_interaction(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    post = db.query(Post).filter(Post.id == interaction.post_id).first()
+    
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
     """
     Logs user's media interaction (watched/skipped).
     """
