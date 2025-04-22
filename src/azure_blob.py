@@ -19,6 +19,12 @@ blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"}
 
+<<<<<<< Updated upstream
+=======
+FFMPEG = os.getenv("FFMPEG_PATH") or "/home/site/wwwroot/bin/ffmpeg" or r"C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
+
+
+>>>>>>> Stashed changes
 async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) -> tuple:
     now = datetime.now(timezone.utc)
     year, month, day = now.strftime("%Y"), now.strftime("%m"), now.strftime("%d")
