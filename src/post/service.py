@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session, joinedload, aliased
+from sqlalchemy.sql import case
 import re
 import math
 from typing import Union, Optional
@@ -682,6 +683,21 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
         .filter(UserSavedPosts.user_id == user_id)
         .count()
     )
+    liked_post_ids = set(
+        db.query(Like.post_id)
+        .filter(Like.user_id == user_id)
+        .all()
+    )
+    liked_post_ids = {pid[0] for pid in liked_post_ids}
+
+    # Saved post_ids (optional since you're already filtering from saved)
+    saved_post_ids = set(
+        db.query(UserSavedPosts.saved_post_id)
+        .filter(UserSavedPosts.user_id == user_id)
+        .all()
+    )
+    saved_post_ids = {pid[0] for pid in saved_post_ids}
+
     saved_posts = (
         db.query(
             UserSavedPosts.id.label("saved_post_id"),
@@ -700,7 +716,7 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             Post.category_of_content,
             Post.media_type,
             Post.share_count,
-            Post.visibility
+            Post.visibility,
         )
         .join(Post, UserSavedPosts.saved_post_id == Post.id)
         .filter(UserSavedPosts.user_id == user_id)
@@ -714,7 +730,12 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
         "page": page,
         "limit": limit,
         "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
-        "data": [dict(row._mapping) for row in saved_posts],
+        "data": [
+            {**dict(row._mapping),
+            "is_liked": row.post_id in liked_post_ids,
+            "is_saved": row.post_id in saved_post_ids,
+    }
+                  for row in saved_posts],
     }
 
 async def share_post_svc(db: Session, sender_user_id: int, request: SharePostRequest):
