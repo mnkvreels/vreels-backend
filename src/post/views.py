@@ -41,7 +41,7 @@ from .service import (
 from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username, optional_current_user
 from ..auth.schemas import UserIdRequest
-from ..azure_blob import upload_to_azure_blob
+from ..azure_blob import upload_to_azure_blob, upload_and_compress
 from ..models.post import VisibilityEnum, MediaInteraction, Post
 from ..models.user import UserDevice, User
 from ..notification_service import send_push_notification
@@ -93,7 +93,7 @@ async def create_post(
     file_url = None
     if file:
         try:
-            file_url, media_type, thumbnail_url = await upload_to_azure_blob(file,user.username,str(user.id))
+            file_url, media_type, thumbnail_url = await upload_and_compress(file,user.username,str(user.id))
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         
