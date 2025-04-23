@@ -153,7 +153,7 @@ async def compress_video(file: UploadFile) -> str:
         "-i", raw_path,
         "-vcodec", "libx264",
         "-crf", "28",               # more compression
-        "-preset", "slow",          # slower = better compression
+        "-preset", "fast",          # slower = better compression
         "-b:a", "128k",             # compress audio
         "-movflags", "faststart",  # for streaming
         compressed_path
