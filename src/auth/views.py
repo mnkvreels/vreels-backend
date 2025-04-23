@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Form, UploadFile, File
 from azure.core.exceptions import ResourceNotFoundError
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, quote
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -176,7 +176,7 @@ async def remove_profile_pic(
 
     try:
         parsed_url = urlparse(current_user.profile_pic)
-        blob_path = unquote(parsed_url.path.lstrip(f"/{AZURE_IMAGE_CONTAINER}/"))
+        blob_path = parsed_url.path.lstrip('/') 
 
         container_client = blob_service_client.get_container_client(AZURE_IMAGE_CONTAINER)
         blob_client = container_client.get_blob_client(blob_path)
@@ -184,19 +184,23 @@ async def remove_profile_pic(
         try:
             blob_client.delete_blob()
         except ResourceNotFoundError:
-            raise HTTPException(status_code=404, detail="Blob not found. Profile picture removed from DB.")
+            pass  
 
-        current_user.profile_pic = ""  # Set to empty string instead of None
+        current_user.profile_pic = ""
         db.commit()
         db.refresh(current_user)
 
         return {
-            "message": "Profile picture removed from Azure and profile successfully.",
+            "message": "Profile picture removed from profile.",
             "profile_pic": current_user.profile_pic
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while removing the profile picture: {str(e)}"
+        )
 
 
 # @router.post("/request-password-reset", status_code=status.HTTP_200_OK)
