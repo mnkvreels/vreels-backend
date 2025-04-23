@@ -17,6 +17,8 @@ AZURE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName=vreelsstor
 AZURE_IMAGE_CONTAINER = "images"
 AZURE_VIDEO_CONTAINER = "videos"
 
+CDN_BASE_URL = "https://vreelspostscdn-fmedgweqdkc6fah5.z01.azurefd.net"
+
 # Initialize BlobServiceClient
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
 
