@@ -139,33 +139,64 @@ async def compress_image(file: UploadFile) -> str:
 
 
 async def compress_video(file: UploadFile) -> str:
+    """Optimized video compression with proper file handling."""
+    # Create temp files with unique names
     raw_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
     compressed_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    
+    # Write the uploaded file content
     content = await file.read()
     with open(raw_path, "wb") as f:
         f.write(content)
+    
     original_size = os.path.getsize(raw_path)
-    print(f"📦 Original video size: {original_size / 1024:.2f} KB")
+    print(f"📦 Original video size: {original_size / (1024*1024):.2f} MB") 
 
     try:
+        # First pass - video only (faster)
         subprocess.run([
-        FFMPEG, "-y",
-        "-i", raw_path,
-        "-vcodec", "libx264",
-        "-crf", "28",               # more compression
-        "-preset", "fast",          # slower = better compression
-        "-b:a", "128k",             # compress audio
-        "-movflags", "faststart",  # for streaming
-        compressed_path
+            FFMPEG, "-y",
+            "-i", raw_path,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "30",
+            "-movflags", "+faststart",
+            "-threads", "4",
+            "-x264-params", "ref=1:bframes=0",
+            "-an",  # No audio in first pass
+            compressed_path
         ], check=True)
-    except subprocess.CalledProcessError:
-        raise Exception("Video compression failed")
 
-    compressed_size = os.path.getsize(compressed_path)
-    ratio = compressed_size / original_size if original_size else 0
+        # Second pass - add audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+            final_path = temp_file.name
+        
+        subprocess.run([
+            FFMPEG, "-y",
+            "-i", compressed_path,  # Compressed video
+            "-i", raw_path,         # Original audio
+            "-c:v", "copy",         # Copy compressed video
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            final_path
+        ], check=True)
 
-    print(f"✅ Compressed video size: {compressed_size / 1024:.2f} KB")
-    print(f"🔻 Compression Ratio: {ratio:.2f}")
+        
+        # Get final compressed size
+        final_size = os.path.getsize(final_path)
+        print(f"✅ Final compressed size: {final_size / (1024*1024):.2f} MB")
+        print(f"🔽 Final compression ratio: {final_size/original_size:.2%}")
+        print(f"💾 Space saved: {(original_size - final_size) / (1024*1024):.2f} MB")
 
-    os.remove(raw_path)
-    return compressed_path
+        # Clean up intermediate files
+        os.remove(compressed_path)
+        os.remove(raw_path)
+
+        return final_path
+
+    except subprocess.CalledProcessError as e:
+        # Clean up any remaining files on error
+        for path in [raw_path, compressed_path, final_path]:
+            if path and os.path.exists(path):
+                os.remove(path)
+        raise Exception(f"Video compression failed: {str(e)}")
