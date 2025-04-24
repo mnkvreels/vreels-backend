@@ -731,7 +731,7 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
         "limit": limit,
         "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
         "data": [
-            {**dict(row._mapping),
+            {**{k if k != "post_id" else "id": v for k, v in row._mapping.items()},
             "is_liked": row.post_id in liked_post_ids,
             "is_saved": row.post_id in saved_post_ids,
     }
