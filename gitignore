@@ -1,0 +1,32 @@
+# Virtual environment
+venv/
+env/
+
+# Bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django-related
+db.sqlite3
+*.sqlite3
+media/
+staticfiles/
+*.log
+
+# Environment variables
+.env
+*.env
+
+# VS Code settings
+.vscode/
+.idea/
+
+# MacOS and Linux system files
+.DS_Store
+*.swp
+
+*.log       # Ignore all log files
+*.pyc       # Ignore all Python bytecode files
+node_modules/  # Ignore node_modules directory
+*.whl       # Ignore wheel files
