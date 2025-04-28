@@ -15,6 +15,7 @@ class Profile(UserBase):
     suggested_follower_count: Optional[int] = 0
     is_following: bool
     is_blocked: bool
+    has_requested: bool   # 🚨 NEW FIELD
 
 
     class Config:
