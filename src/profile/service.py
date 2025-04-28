@@ -126,6 +126,7 @@ async def get_followers_svc(db: Session, user_id: int) -> FollowersList:
                 "profile_pic": follower.profile_pic,
                 "name": follower.name,
                 "username": follower.username,
+                "phone_number": follower.phone_number,
                 "follow_back": not is_following_back,  # True if you’re NOT following them
             }
         )
@@ -160,6 +161,7 @@ async def get_following_svc(db: Session, user_id: int) -> list[FollowingList]:
                 "profile_pic": user.profile_pic,
                 "name": user.name,
                 "username": user.username,
+                "phone_number": user.phone_number,
             }
         )
 

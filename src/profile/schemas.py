@@ -27,6 +27,7 @@ class UserSchema(BaseModel):
     profile_pic: Optional[str] = None
     username: str
     name: Optional[str] = None
+    phone_number: int
     follow_back: Optional[bool] = None 
 
     class Config:
