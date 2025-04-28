@@ -7,10 +7,14 @@ from moviepy import VideoFileClip
 from PIL import Image
 from time import sleep
 from io import BytesIO
+from typing import Optional
 import tempfile
 
 import uuid
 import subprocess
+
+import json
+
 
 # Azure Blob Storage Configuration
 AZURE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName=vreelsstorage;AccountKey=YkdFdR/UTuWKJnB4nmYJPV+NaqgsP9Vy3LVHIJ2R6m10jWM4v2a141Fh0HA+95BNs5PH6k/OTO2X+AStlUmb6Q==;EndpointSuffix=core.windows.net"
@@ -27,6 +31,7 @@ IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"}
 
 FFMPEG = os.getenv("FFMPEG_PATH") or r"C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
+FFPROBE = os.getenv("FFPROBE_PATH") or "C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffprobe.exe"
 
 async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) -> tuple:
     now = datetime.now(timezone.utc)
@@ -62,6 +67,7 @@ async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) ->
 
         thumbnail_url = None
         if media_type == "video":
+            '''
             # Generate thumbnail
             clip = VideoFileClip(temp_video.name)
             frame = clip.get_frame(3)  # Get frame at 3 seconds
@@ -77,10 +83,28 @@ async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) ->
 
             with open(temp_thumb.name, "rb") as thumb_file:
                 thumb_blob_client.upload_blob(thumb_file, overwrite=True)
+            '''
+            clip = VideoFileClip(temp_video.name)
+            frame = clip.get_frame(3)
+            thumbnail_image = Image.fromarray(frame)
+            clip.close()
+
+            # ✅ Save thumbnail to in-memory BytesIO (NOT to temp file)
+            thumb_io = BytesIO()
+            thumbnail_image.save(thumb_io, format="JPEG", optimize=True, quality=85)
+            thumb_io.seek(0)
+
+            # ✅ Upload from memory
+            thumb_blob_name = f"{username}/{year}/{month}/{day}/thumbnails/{user_id}_{timestamp_str}.jpg"
+            thumb_container_client = blob_service_client.get_container_client(AZURE_IMAGE_CONTAINER)
+            thumb_blob_client = thumb_container_client.get_blob_client(thumb_blob_name)
+
+            thumb_blob_client.upload_blob(thumb_io.read(), overwrite=True)
+
 
             thumbnail_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{AZURE_IMAGE_CONTAINER}/{thumb_blob_name}"
 
-            os.remove(temp_thumb.name)
+            #os.remove(temp_thumb.name)
         
         os.remove(temp_video.name)
 
@@ -200,3 +224,88 @@ async def compress_video(file: UploadFile) -> str:
             if path and os.path.exists(path):
                 os.remove(path)
         raise Exception(f"Video compression failed: {str(e)}")
+
+
+'''
+async def compress_video(file: UploadFile) -> str:
+    """Optimized video compression with conditional audio muxing, no file locking issues."""
+    raw_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    compressed_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    final_path: Optional[str] = None
+
+    try:
+        # Save uploaded file to disk
+        content = await file.read()
+        with open(raw_path, "wb") as f:
+            f.write(content)
+
+        original_size = os.path.getsize(raw_path)
+        print(f"📦 Original video size: {original_size / (1024*1024):.2f} MB")
+
+        # First pass: compress video only (no audio)
+        subprocess.run([
+            FFMPEG, "-y",
+            "-i", raw_path,
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "30",
+            "-movflags", "+faststart",
+            "-threads", "4",
+            "-x264-params", "ref=1:bframes=0",
+            "-an",
+            compressed_path
+        ], check=True)
+
+        # 🔥 New: Check for audio presence safely
+        has_audio = has_audio_stream_ffmpeg(raw_path)
+
+        if has_audio:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                final_path = temp_file.name
+
+            subprocess.run([
+                FFMPEG, "-y",
+                "-i", compressed_path,
+                "-i", raw_path,
+                "-c:v", "copy",
+                "-c:a", "aac", "-b:a", "128k",
+                "-movflags", "+faststart",
+                final_path
+            ], check=True)
+
+            os.remove(compressed_path)
+        else:
+            print("⚠️ No audio stream detected. Using video-only output.")
+            final_path = compressed_path
+
+        final_size = os.path.getsize(final_path)
+        print(f"✅ Final compressed size: {final_size / (1024*1024):.2f} MB")
+        print(f"🔽 Final compression ratio: {final_size/original_size:.2%}")
+        print(f"💾 Space saved: {(original_size - final_size) / (1024*1024):.2f} MB")
+
+        return final_path
+
+    except subprocess.CalledProcessError as e:
+        print("❌ FFmpeg failed:", e)
+        raise Exception(f"Video compression failed: {str(e)}")
+
+    finally:
+        for path in [raw_path, compressed_path]:
+            if os.path.exists(path):
+                os.remove(path)
+
+
+def has_audio_stream_ffmpeg(file_path: str) -> bool:
+    """Use ffmpeg to check for audio stream without locking file."""
+    try:
+        result = subprocess.run([
+            FFMPEG, "-i", file_path,
+            "-map", "0:a:0", "-f", "null", "-"
+        ], capture_output=True, text=True)
+        if "matches no streams" in result.stderr.lower():
+            return False
+        return True
+    except Exception as e:
+        print(f"⚠️ Audio stream check failed: {e}")
+        return False
+'''
