@@ -15,6 +15,7 @@ class Profile(UserBase):
     suggested_follower_count: Optional[int] = 0
     is_following: bool
     is_blocked: bool
+    has_requested: bool   # 🚨 NEW FIELD
 
 
     class Config:
@@ -26,6 +27,7 @@ class UserSchema(BaseModel):
     profile_pic: Optional[str] = None
     username: str
     name: Optional[str] = None
+    phone_number: int
     follow_back: Optional[bool] = None 
 
     class Config:

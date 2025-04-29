@@ -42,8 +42,9 @@ from ..profile.service import get_followers_svc
 from ..auth.service import get_current_user, existing_user, get_user_from_user_id, send_notification_to_user, get_user_by_username, optional_current_user
 from ..auth.schemas import UserIdRequest
 from ..azure_blob import upload_to_azure_blob, upload_and_compress
-from ..models.post import VisibilityEnum, MediaInteraction, Post
-from ..models.user import UserDevice, User
+from ..models.post import VisibilityEnum, MediaInteraction
+from ..auth.enums import AccountTypeEnum
+from ..models.user import UserDevice, User, Follow
 from ..notification_service import send_push_notification
 
 
@@ -161,7 +162,7 @@ async def get_current_user_posts(page: int, limit: int, db: Session = Depends(ge
 
 
 @router.get("/userposts")
-async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db), current_user: Optional[User] =Depends(optional_current_user)):
+async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user) ):
     # verify token
     user = await existing_user(db, request.username)
     if not user:
@@ -169,6 +170,35 @@ async def get_user_posts_by_username(page: int, limit: int, request: UserRequest
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found."
         )
+    if current_user:
+        print(f"🔍 current_user.id = {current_user.id}")
+        print(f"🔍 current_user.username = {current_user.username}")
+    else:
+        print(f"⚠️ No current user — anonymous access.")
+
+    
+    print(f"🔍 target_user.id  = {request.username}")
+
+    # ✅ If account is private, check follow status
+    if user.account_type == AccountTypeEnum.PRIVATE:
+        if not current_user:
+            # Anonymous users should not see private posts
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account is private."
+            )
+
+        is_following = db.query(Follow).filter_by(
+            follower_id=current_user.id,
+            following_id=user.id
+        ).first()
+
+        if not is_following:
+            # ❌ Not following → No posts allowed
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not allowed to view posts of this private account."
+            )
     posts = await get_user_posts_svc(db, user.id, current_user, page, limit)
     return posts
 

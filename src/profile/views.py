@@ -3,7 +3,7 @@ from typing import List
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from src.models.user import BlockedUsers
+from src.models.user import BlockedUsers, FollowRequest
 from .schemas import Profile, FollowersList, FollowingList, SuggestedUser,SuggestedUserResponse
 from .service import (
     get_followers_svc,
@@ -103,13 +103,61 @@ async def follow(
     db_user = current_user
     if not db_user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="invalid token"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Invalid token"
         )
 
+    target_user = await get_user_by_username(db, request.username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user not found")
+
+    # ✅ Check if already following
+    existing_follow = db.query(Follow).filter_by(
+        follower_id=db_user.id,
+        following_id=target_user.id
+    ).first()
+
+    if existing_follow:
+        return {"status": "already_following", "message": "Already following"}
+
+    # ✅ If private, create follow request
+    if target_user.account_type == AccountTypeEnum.PRIVATE:
+        # Check if already requested
+        existing_request = db.query(FollowRequest).filter_by(
+            requester_id=db_user.id,
+            target_id=target_user.id
+        ).first()
+        if existing_request:
+            return {"status": "pending", "message": "Follow request already sent"}
+
+        follow_request = FollowRequest(requester_id=db_user.id, target_id=target_user.id)
+        db.add(follow_request)
+        db.commit()
+
+        # (Optional) Send notification to target user
+        devices = db.query(UserDevice).filter(
+            UserDevice.user_id == target_user.id,
+            UserDevice.notify_follow == True
+        ).all()
+
+        for device in devices:
+            if device.device_token and device.platform:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="🔔 New Follow Request",
+                        message=f"{current_user.username} requested to follow you."
+                    )
+                except Exception as e:
+                    print(f"Notification send failed for device {device.device_id}: {e}")
+
+        return {"status": "pending", "message": "Follow request sent"}
+
+    # ✅ If public, direct follow
     res = await follow_svc(db, db_user.username, request.username)
     if res is False:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="could not follow"
+            status_code=status.HTTP_409_CONFLICT, detail="Could not follow"
         )
     elif res:
         followed_user = await get_user_by_username(db, request.username)
@@ -117,7 +165,7 @@ async def follow(
         # Fetch devices of followed user that allow follow notifications
         devices = db.query(UserDevice).filter(
             UserDevice.user_id == followed_user.id,
-            UserDevice.notify_follow == True  # assuming this is the correct column name
+            UserDevice.notify_follow == True
         ).all()
 
         for device in devices:
@@ -132,7 +180,79 @@ async def follow(
                 except Exception as e:
                     print(f"Notification send failed for device {device.device_id}: {e}")
 
-        return {"message": "Followed successfully!"}
+        return {"status": "success", "message": "Followed successfully"}
+
+@router.post("/follow-requests/accept", status_code=status.HTTP_200_OK)
+async def accept_follow_request(
+    request: UserRequest,  # { "username": "requester_username" }
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_user = current_user
+
+    # Get the follow request
+    requester = await get_user_by_username(db, request.username)
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
+    follow_request = db.query(FollowRequest).filter_by(
+        requester_id=requester.id,
+        target_id=target_user.id
+    ).first()
+
+    if not follow_request:
+        raise HTTPException(status_code=404, detail="Follow request not found")
+
+    # Accept: Create follow
+    await follow_svc(db, requester.username, target_user.username)
+
+    # Delete the follow request
+    db.delete(follow_request)
+    db.commit()
+
+    return {"message": "Follow request accepted"}
+
+@router.post("/follow-requests/reject", status_code=status.HTTP_200_OK)
+async def reject_follow_request(
+    request: UserRequest,  # { "username": "requester_username" }
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_user = current_user
+
+    requester = await get_user_by_username(db, request.username)
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
+    follow_request = db.query(FollowRequest).filter_by(
+        requester_id=requester.id,
+        target_id=target_user.id
+    ).first()
+
+    if not follow_request:
+        raise HTTPException(status_code=404, detail="Follow request not found")
+
+    db.delete(follow_request)
+    db.commit()
+
+    return {"message": "Follow request rejected"}
+
+
+@router.get("/follow-requests/pending", status_code=status.HTTP_200_OK)
+async def pending_follow_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    requests = db.query(FollowRequest).filter(
+        FollowRequest.target_id == current_user.id
+    ).all()
+
+    return [{
+        "requester_id": r.requester.id,
+        "requester_username": r.requester.username,
+        "requester_profile_pic": r.requester.profile_pic,
+        "created_at": r.created_at
+    } for r in requests]
 
 
 @router.post("/unfollow", status_code=status.HTTP_200_OK)

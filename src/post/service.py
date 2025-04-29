@@ -717,8 +717,10 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             Post.media_type,
             Post.share_count,
             Post.visibility,
+            User.username,
         )
         .join(Post, UserSavedPosts.saved_post_id == Post.id)
+        .join(User, Post.author_id == User.id)
         .filter(UserSavedPosts.user_id == user_id)
         .order_by(desc(UserSavedPosts.created_at))
         .offset(offset).limit(limit)
@@ -1056,11 +1058,12 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
             User.profile_pic,
             User.name,
             User.bio,
+            User.phone_number,
             func.count(Follow.follower_id).label("followers_count")
         )
         .outerjoin(Follow, Follow.following_id == User.id)
         .filter(User.username.ilike(f"%{query}%"))
-        .group_by(User.id, User.username, User.profile_pic, User.name, User.bio)
+        .group_by(User.id, User.username, User.profile_pic, User.name, User.bio, User.phone_number)
         .order_by(func.count(Follow.follower_id).desc())
         .limit(limit)
         .offset(offset)
@@ -1088,6 +1091,7 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
                 "profile_pic": user.profile_pic,
                 "name": user.name,
                 "bio": user.bio,
+                "phone_number": user.phone_number,
                 "followers_count": user.followers_count,
                 "is_following": user.id in following_ids,
                 "is_self": user.id == current_user.id
