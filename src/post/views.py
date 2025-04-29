@@ -1,12 +1,16 @@
 import os
 import re
+from random import choice,randint,uniform,sample
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import func,select,insert
+from src.models.post import Like,Comment
 from pydantic import BaseModel
-from datetime import timedelta
+from datetime import *
 from ..database import get_db
 from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse
+from src.models.post import Post,post_likes
 from .service import (
     create_post_svc,
     delete_post_svc,
@@ -676,3 +680,83 @@ async def seed_pexels_posts(
 
     return {"posts_created": results}
 
+
+@router.post("/dev/auto-like-comment-all-users", tags=["dev-utils"])
+def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
+    all_users = db.query(User).all()
+    all_posts = db.query(Post).order_by(func.newid()).limit(10).all()
+
+    sample_comments = [
+        "Awesome post!", "Great content!", "🔥🔥🔥", "Loved this one!",
+        "Keep it up!", "Superb!", "Respect!", "Insane quality!", "Nice work!", "Great shot!"
+    ]
+    updated_posts = []
+
+    for post in all_posts:
+        # Exclude post owner from interactions
+        other_users = [u for u in all_users if u.id != post.author_id]
+        if not other_users:
+            continue
+
+        # 💬 Add 6 random comments
+        for _ in range(6):
+            commenter = choice(other_users)
+            db.add(Comment(
+                post_id=post.id,
+                user_id=commenter.id,
+                content=choice(sample_comments),
+                created_at=datetime.utcnow()
+            ))
+
+        # ❤ Add up to 12 likes & media interactions
+        liked_by_users = sample(other_users, min(12, len(other_users)))
+        for liker in liked_by_users:
+            # ✅ Avoid duplicate likes
+            existing = db.execute(
+                select(post_likes).where(
+                    (post_likes.c.user_id == liker.id) &
+                    (post_likes.c.post_id == post.id)
+                )
+            ).first()
+
+            if not existing:
+                db.execute(insert(post_likes).values(user_id=liker.id, post_id=post.id))
+
+            # 🧠 Simulate media interaction
+            is_video = choice([False]*4 + [True])
+            if is_video:
+                video_length = randint(20, 90)
+                watched_time = int(video_length * 0.15)
+                media_type = post.media_type
+            else:
+                video_length = randint(3, 6)  # for photo, simulate short length
+                watched_time = video_length
+                media_type = post.media_type 
+
+            db.add(MediaInteraction(
+                user_id=liker.id,
+                post_id=post.id,
+                media_type=media_type,
+                video_length=video_length,
+                watched_time=watched_time,
+                skipped=False,
+                created_at=datetime.utcnow()
+            ))
+
+        # Update post's like/comment count
+        post.likes_count = (post.likes_count or 0) + len(liked_by_users)
+        post.comments_count = (post.comments_count or 0) + 6
+        post_counter = 0
+        updated_posts.append(post.id)
+        post_counter += 1
+                # ✅ Commit every 10 posts
+        if post_counter % 10 == 0:
+            db.commit()
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Added likes, comments, and media interactions to {len(updated_posts)} posts.",
+        "updated_post_ids": updated_posts
+    }
