@@ -19,6 +19,22 @@ class Follow(Base):
     following_user = relationship("User", back_populates="followers", foreign_keys=[following_id])
 
 
+class FollowRequest(Base):
+    __tablename__ = "follow_requests"
+    __table_args__ = (
+        Index("ix_followrequest_requester_target", "requester_id", "target_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    requester_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    target_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+
+    requester = relationship("User", foreign_keys=[requester_id], backref="sent_follow_requests")
+    target = relationship("User", foreign_keys=[target_id], backref="received_follow_requests")
+
+
+
 class User(Base):
     __tablename__ = "users"
 

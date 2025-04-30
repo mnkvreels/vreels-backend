@@ -1,7 +1,8 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Any
 from ..auth.enums import AccountTypeEnum
 from ..auth.schemas import UserBase
+from datetime import datetime
 
 
 class Profile(UserBase):
@@ -15,6 +16,7 @@ class Profile(UserBase):
     suggested_follower_count: Optional[int] = 0
     is_following: bool
     is_blocked: bool
+    has_requested: bool   # 🚨 NEW FIELD
 
 
     class Config:
@@ -26,10 +28,13 @@ class UserSchema(BaseModel):
     profile_pic: Optional[str] = None
     username: str
     name: Optional[str] = None
+    phone_number: int
     follow_back: Optional[bool] = None 
 
     class Config:
         orm_mode = True
+
+
 
 
 class FollowingList(BaseModel):
@@ -38,6 +43,7 @@ class FollowingList(BaseModel):
 
 class FollowersList(BaseModel):
     followers: list[UserSchema] = []
+    pending_requests: List[Any] = []
 
 
 class SuggestedUser(BaseModel):

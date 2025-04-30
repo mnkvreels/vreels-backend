@@ -7,7 +7,7 @@ from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
 from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes
-from ..models.user import User, Follow
+from ..models.user import User, Follow, FollowRequest
 from ..auth.schemas import User as UserSchema
 from ..models.post import VisibilityEnum
 from ..models.activity import Activity
@@ -717,8 +717,10 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             Post.media_type,
             Post.share_count,
             Post.visibility,
+            User.username,
         )
         .join(Post, UserSavedPosts.saved_post_id == Post.id)
+        .join(User, Post.author_id == User.id)
         .filter(UserSavedPosts.user_id == user_id)
         .order_by(desc(UserSavedPosts.created_at))
         .offset(offset).limit(limit)
@@ -1056,11 +1058,12 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
             User.profile_pic,
             User.name,
             User.bio,
+            User.phone_number,
             func.count(Follow.follower_id).label("followers_count")
         )
         .outerjoin(Follow, Follow.following_id == User.id)
         .filter(User.username.ilike(f"%{query}%"))
-        .group_by(User.id, User.username, User.profile_pic, User.name, User.bio)
+        .group_by(User.id, User.username, User.profile_pic, User.name, User.bio, User.phone_number)
         .order_by(func.count(Follow.follower_id).desc())
         .limit(limit)
         .offset(offset)
@@ -1073,6 +1076,14 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
         .filter(Follow.follower_id == current_user.id)
         .all()
     )
+
+    # ✅ Get all pending follow request target_ids
+    requested_ids = set(
+        row[0] for row in db.query(FollowRequest.target_id)
+        .filter(FollowRequest.requester_id == current_user.id)
+        .all()
+    )
+
 
     return {
         "metadata": {
@@ -1088,8 +1099,10 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
                 "profile_pic": user.profile_pic,
                 "name": user.name,
                 "bio": user.bio,
+                "phone_number": user.phone_number,
                 "followers_count": user.followers_count,
                 "is_following": user.id in following_ids,
+                "is_requested": user.id in requested_ids, 
                 "is_self": user.id == current_user.id
             }
             for user in users
