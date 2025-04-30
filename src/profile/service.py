@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..models.user import User, Follow, FollowRequest
+from ..models.user import User, Follow, FollowRequest, BlockedUsers
 from ..models.activity import Activity
 from .schemas import FollowersList, FollowingList, Profile
 from ..auth.service import get_user_from_user_id, existing_user
@@ -258,6 +258,15 @@ async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
         following_ids = db.query(Follow.following_id).filter(Follow.follower_id == user_id).all()
         following_ids = [fid[0] for fid in following_ids]
 
+        # 🔒 Get all users blocked by or blocking this user
+        blocked_ids = set(
+            row[0] for row in db.query(BlockedUsers.blocked_id)
+            .filter(BlockedUsers.blocker_id == user_id)
+        ).union(
+            row[0] for row in db.query(BlockedUsers.blocker_id)
+            .filter(BlockedUsers.blocked_id == user_id)
+        )
+
         # Scenario 1: Friends-of-Friends
         second_degree_users = (
             db.query(User)
@@ -265,7 +274,8 @@ async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
             .filter(
                 Follow.follower_id.in_(following_ids),
                 Follow.following_id != user_id,
-                ~Follow.following_id.in_(following_ids)
+                ~Follow.following_id.in_(following_ids),
+                ~User.id.in_(blocked_ids)  # ✅ Exclude blocked users
             )
             .distinct(User.id)
         )
@@ -277,7 +287,8 @@ async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
             .filter(
                 Follow.following_id == user_id,
                 ~Follow.follower_id.in_(following_ids),
-                Follow.follower_id != user_id
+                Follow.follower_id != user_id,
+                ~User.id.in_(blocked_ids)  # ✅ Exclude blocked users
             )
             .distinct(User.id)
         )

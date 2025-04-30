@@ -11,7 +11,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
 from src.database import get_db
-from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice
+from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice, FollowRequest
 from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction
 from ..models.activity import Activity
 from .schemas import UserCreate, UserUpdate
@@ -257,6 +257,19 @@ async def block_user_svc(db, blocker_id, blocked_id):
     if existing_block:
         # Return False to indicate that the user is already blocked
         return False
+
+    # ✅ 1. Delete mutual follow relationships
+    db.query(Follow).filter(
+        ((Follow.follower_id == blocker_id) & (Follow.following_id == blocked_id)) |
+        ((Follow.follower_id == blocked_id) & (Follow.following_id == blocker_id))
+    ).delete(synchronize_session=False)
+
+    # ✅ 2. Delete any pending follow requests (in either direction)
+    db.query(FollowRequest).filter(
+        ((FollowRequest.requester_id == blocker_id) & (FollowRequest.target_id == blocked_id)) |
+        ((FollowRequest.requester_id == blocked_id) & (FollowRequest.target_id == blocker_id))
+    ).delete(synchronize_session=False)
+
     
     # Add the new block if no existing block is found
     new_block = BlockedUsers(blocker_id=blocker_id, blocked_id=blocked_id)
