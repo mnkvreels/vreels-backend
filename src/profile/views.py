@@ -48,6 +48,12 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
         Follow.following_id == db_user.id
     ).first() is not None
 
+    # ✅ Check if follow request is pending (is_requested)
+    is_requested = db.query(FollowRequest).filter_by(
+        requester_id=requesting_user.id,
+        target_id=db_user.id
+    ).first() is not None
+
     # ✅ Check if blocked
     is_blocked = db.query(BlockedUsers).filter(
         BlockedUsers.blocker_id == requesting_user.id,
@@ -69,7 +75,8 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
         return {
             **db_user.__dict__,
             "is_following": False,
-            "is_blocked": False
+            "is_blocked": False,
+            "is_requested": False
         }
 
     # ✅ If private and not following — return limited profile + flags
@@ -81,14 +88,16 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
             "account_type": db_user.account_type,
             "is_private": True,
             "is_following": is_following,
-            "is_blocked": is_blocked
+            "is_blocked": is_blocked,
+            "is_requested": is_requested
         }
 
     # ✅ Full profile
     return {
         **db_user.__dict__,
         "is_following": is_following,
-        "is_blocked": is_blocked
+        "is_blocked": is_blocked,
+        "is_requested": is_requested
     }
 
 
