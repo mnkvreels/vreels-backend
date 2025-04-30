@@ -45,6 +45,16 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
     if not db_user or not requesting_user:
         raise HTTPException(status_code=404, detail="User(s) not found")
 
+    # 🔒 Block enforcement
+    blocked = db.query(BlockedUsers).filter(
+        ((BlockedUsers.blocker_id == requesting_user.id) & (BlockedUsers.blocked_id == db_user.id)) |
+        ((BlockedUsers.blocker_id == db_user.id) & (BlockedUsers.blocked_id == requesting_user.id))
+    ).first()
+
+    if blocked:
+        raise HTTPException(status_code=403, detail="This user is not accessible.")
+
+
     # ✅ Check if following
     is_following = db.query(Follow).filter(
         Follow.follower_id == requesting_user.id,
