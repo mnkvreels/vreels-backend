@@ -7,11 +7,15 @@ from moviepy import VideoFileClip
 from PIL import Image
 from time import sleep
 from io import BytesIO
+from typing import Optional
 import tempfile
 
 import uuid
 import subprocess
 import json
+
+import json
+
 
 # Azure Blob Storage Configuration
 AZURE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName=vreelsstorage;AccountKey=YkdFdR/UTuWKJnB4nmYJPV+NaqgsP9Vy3LVHIJ2R6m10jWM4v2a141Fh0HA+95BNs5PH6k/OTO2X+AStlUmb6Q==;EndpointSuffix=core.windows.net"
@@ -28,6 +32,7 @@ IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm"}
 
 FFMPEG = os.getenv("FFMPEG_PATH") or r"C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe"
+FFPROBE = os.getenv("FFPROBE_PATH") or "C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffprobe.exe"
 
 async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) -> tuple:
     now = datetime.now(timezone.utc)
@@ -63,6 +68,7 @@ async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) ->
 
         thumbnail_url = None
         if media_type == "video":
+            '''
             # Generate thumbnail
             clip = VideoFileClip(temp_video.name)
             frame = clip.get_frame(3)  # Get frame at 3 seconds
@@ -78,10 +84,28 @@ async def upload_to_azure_blob(file: UploadFile, username: str, user_id: str) ->
 
             with open(temp_thumb.name, "rb") as thumb_file:
                 thumb_blob_client.upload_blob(thumb_file, overwrite=True)
+            '''
+            clip = VideoFileClip(temp_video.name)
+            frame = clip.get_frame(3)
+            thumbnail_image = Image.fromarray(frame)
+            clip.close()
+
+            # ✅ Save thumbnail to in-memory BytesIO (NOT to temp file)
+            thumb_io = BytesIO()
+            thumbnail_image.save(thumb_io, format="JPEG", optimize=True, quality=85)
+            thumb_io.seek(0)
+
+            # ✅ Upload from memory
+            thumb_blob_name = f"{username}/{year}/{month}/{day}/thumbnails/{user_id}_{timestamp_str}.jpg"
+            thumb_container_client = blob_service_client.get_container_client(AZURE_IMAGE_CONTAINER)
+            thumb_blob_client = thumb_container_client.get_blob_client(thumb_blob_name)
+
+            thumb_blob_client.upload_blob(thumb_io.read(), overwrite=True)
+
 
             thumbnail_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{AZURE_IMAGE_CONTAINER}/{thumb_blob_name}"
 
-            os.remove(temp_thumb.name)
+            #os.remove(temp_thumb.name)
         
         os.remove(temp_video.name)
 
@@ -226,4 +250,8 @@ async def compress_video(file: UploadFile) -> str:
         for path in [raw_path, compressed_path, final_path]:
             if path and os.path.exists(path):
                 os.remove(path)
+
         raise Exception(f"Video compression failed: {str(e)}")
+
+
+

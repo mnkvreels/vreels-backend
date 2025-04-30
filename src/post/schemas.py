@@ -120,7 +120,6 @@ class PostResponse(BaseModel):
     class Config:
         orm_mode = True  # This is critical to allow Pydantic to work with ORM objects
 
-
 class SeedPexelsRequest(BaseModel):
     category: str = "nature"
     count: int = 5
