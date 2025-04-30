@@ -9,7 +9,7 @@ from src.models.post import Like,Comment
 from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest
 from src.models.post import Post,post_likes
 from .service import (
     create_post_svc,
@@ -59,8 +59,8 @@ from urllib.parse import urlparse
 
 PEXELS_API_KEY = "1XwEXrdgodXtFlyqoC9Eq6asvqvC3whLOQpRclWrWkZFWSSCjBObf0ir"
 PEXELS_HEADERS = {"Authorization": PEXELS_API_KEY}
-PEXELS_IMAGE_URL = "https://api.pexels.com/v1/search?query=kids&per_page=15"
-PEXELS_VIDEO_URL = "https://api.pexels.com/videos/search?query=spring&per_page=15"
+#PEXELS_IMAGE_URL = "https://api.pexels.com/v1/search?query=kids&per_page=15"
+#PEXELS_VIDEO_URL = "https://api.pexels.com/videos/search?query=spring&per_page=15"
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -599,8 +599,10 @@ async def download_file(url: str) -> str:
         else:
             raise Exception(f"Failed to download from {url}")
 
+'''
 @router.post("/dev/seed-pexels-posts", tags=["dev-utils"])
 async def seed_pexels_posts(
+    payload: SeedPexelsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -677,6 +679,102 @@ async def seed_pexels_posts(
                 os.remove(local_path)
             except Exception as e:
                 results.append({"error": f"Error uploading video: {str(e)}"})
+
+    return {"posts_created": results}
+'''
+
+@router.post("/dev/seed-pexels-posts", tags=["dev-utils"])
+async def seed_pexels_posts(
+    payload: SeedPexelsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    results = []
+    async with httpx.AsyncClient() as client:
+        if payload.include_images:
+            image_url = f"https://api.pexels.com/v1/search?query={payload.category}&per_page={payload.count}"
+            image_resp = await client.get(image_url, headers=PEXELS_HEADERS)
+            images = image_resp.json().get("photos", [])
+
+            for image in images:
+                try:
+                    img_url = image["src"]["large"]
+                    local_path = await download_file(img_url)
+
+                    # Extract file extension
+                    parsed_url = urlparse(img_url)
+                    file_name = os.path.basename(parsed_url.path)
+                    file_ext = file_name.split(".")[-1].lower()
+
+                    if file_ext not in {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}:
+                        raise ValueError("Unsupported file type.")
+
+                    mime_type, _ = mimetypes.guess_type(img_url)
+
+                    with open(local_path, "rb") as file_data:
+                        upload_file = UploadFile(
+                            filename=f"pexels_img.{file_ext}",
+                            file=file_data,
+                            content_type=mime_type or "application/octet-stream"
+                        )
+                        azure_url, media_type, thumbnail_url = await upload_and_compress(
+                            upload_file, current_user.username, str(current_user.id)
+                        )
+
+                    post = PostCreate(
+                        content=f"📸 Auto post from Pexels",
+                        location="Test Location",
+                        visibility=VisibilityEnum.public,
+                        category_of_content=payload.category,
+                        media_type=media_type,
+                        thumbnail=thumbnail_url
+
+                    )
+                    created_post = await create_post_svc(db, post, current_user.id, azure_url)
+                    results.append({"type": "image", "id": created_post.id, "media_url": azure_url, "thumbnail_url": thumbnail_url})
+
+                    os.remove(local_path)
+                except Exception as e:
+                    results.append({"error": f"Image upload failed: {str(e)}"})
+
+        if payload.include_videos:
+            video_url = f"https://api.pexels.com/videos/search?query={payload.category}&per_page={payload.count}"
+            video_resp = await client.get(video_url, headers=PEXELS_HEADERS)
+            videos = video_resp.json().get("videos", [])
+
+            for video in videos:
+                try:
+                    vid_url = video["video_files"][0]["link"]
+                    local_path = await download_file(vid_url)
+
+                    file_ext = vid_url.split(".")[-1].split("?")[0].lower()
+                    mime_type, _ = mimetypes.guess_type(vid_url)
+
+                    with open(local_path, "rb") as file_data:
+                        upload_file = UploadFile(
+                            filename=f"pexels_vid.{file_ext}",
+                            file=file_data,
+                            content_type=mime_type or "application/octet-stream"
+                        )
+                        azure_url, media_type, thumbnail_url = await upload_and_compress(
+                            upload_file, current_user.username, str(current_user.id)
+                        )
+
+                    post = PostCreate(
+                        content=f"🎥 Auto post from Pexels",
+                        location="Test Location",
+                        visibility=VisibilityEnum.public,
+                        category_of_content=payload.category,
+                        media_type=media_type,
+                        thumbnail=thumbnail_url  
+                        
+                    )
+                    created_post = await create_post_svc(db, post, current_user.id, azure_url)
+                    results.append({"type": "video", "id": created_post.id, "media_url": azure_url,"thumbnail_url": thumbnail_url})
+
+                    os.remove(local_path)
+                except Exception as e:
+                    results.append({"error": f"Video upload failed: {str(e)}"})
 
     return {"posts_created": results}
 
