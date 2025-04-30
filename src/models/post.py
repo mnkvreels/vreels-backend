@@ -68,6 +68,7 @@ class Post(Base):
     author = relationship("User", back_populates="posts")
     visibility = Column(Enum(VisibilityEnum), nullable=False, default="public")
     thumbnail = Column(String, nullable=True)
+    video_length = Column(Integer, default=0, nullable=False)
     # Many-to-Many Relationships
     liked_by_users = relationship("User", secondary="post_likes", back_populates="liked_posts")
     hashtags = relationship("Hashtag", secondary="post_hashtags", back_populates="posts")

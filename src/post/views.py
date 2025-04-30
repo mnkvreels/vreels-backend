@@ -93,6 +93,7 @@ async def create_post(
     file: UploadFile = Form(...),
     location: Optional[str] = Form(None),
     category_of_content: Optional[str] = Form(None),
+    video_length: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -114,7 +115,8 @@ async def create_post(
         visibility=visibility,
         category_of_content=category_of_content,
         media_type=media_type,
-        thumbnail=thumbnail_url
+        thumbnail=thumbnail_url,
+        video_length=0 if media_type == "image" else video_length
     )
 
     # Create the post with the file URL (if any)

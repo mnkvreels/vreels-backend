@@ -59,6 +59,7 @@ class PostCreate(BaseModel):
     category_of_content: Optional[str]
     media_type: Optional[str]
     thumbnail: Optional[str]
+    video_length: Optional[int] = None
 
     class Config:
         orm_mode = True
@@ -110,6 +111,7 @@ class PostResponse(BaseModel):
     category_of_content: Optional[str]
     media_type: Optional[str]
     thumbnail: Optional[str]
+    video_length: Optional[int]
     author_id: int
     likes_count: int
     comments_count: int
