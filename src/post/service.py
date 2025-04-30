@@ -7,7 +7,7 @@ from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
 from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes
-from ..models.user import User, Follow
+from ..models.user import User, Follow, FollowRequest
 from ..auth.schemas import User as UserSchema
 from ..models.post import VisibilityEnum
 from ..models.activity import Activity
@@ -1077,6 +1077,14 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
         .all()
     )
 
+    # ✅ Get all pending follow request target_ids
+    requested_ids = set(
+        row[0] for row in db.query(FollowRequest.target_id)
+        .filter(FollowRequest.requester_id == current_user.id)
+        .all()
+    )
+
+
     return {
         "metadata": {
             "total_count": total_count,
@@ -1094,6 +1102,7 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
                 "phone_number": user.phone_number,
                 "followers_count": user.followers_count,
                 "is_following": user.id in following_ids,
+                "is_requested": user.id in requested_ids, 
                 "is_self": user.id == current_user.id
             }
             for user in users

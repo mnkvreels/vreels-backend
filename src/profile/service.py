@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..models.user import User, Follow
+from ..models.user import User, Follow, FollowRequest
 from ..models.activity import Activity
 from .schemas import FollowersList, FollowingList, Profile
 from ..auth.service import get_user_from_user_id, existing_user
@@ -88,7 +88,7 @@ async def unfollow_svc(db: Session, follower: str, following: str):
         raise HTTPException(status_code=500, detail=f"Unfollow failed: {e}")
 
 
-
+'''
 # get followers
 async def get_followers_svc(db: Session, user_id: int) -> FollowersList:
     db_user = await get_user_from_user_id(db, user_id)
@@ -104,6 +104,7 @@ async def get_followers_svc(db: Session, user_id: int) -> FollowersList:
             .distinct(User.id)
             .all()
         )
+
     except Exception:
         raise HTTPException(status_code=500, detail="Database error")
 
@@ -131,7 +132,76 @@ async def get_followers_svc(db: Session, user_id: int) -> FollowersList:
             }
         )
 
+
+
     return FollowersList(followers=followers)
+
+'''
+
+async def get_followers_svc(db: Session, user_id: int) -> FollowersList:
+    try:
+        db_user = await get_user_from_user_id(db, user_id)
+        if not db_user:
+            return FollowersList()
+
+        # Followers
+        db_followers = (
+            db.query(User)
+            .join(Follow, Follow.follower_id == User.id)
+            .filter(Follow.following_id == user_id)
+            .distinct(User.id)
+            .all()
+        )
+
+        # Pending requests
+        db_requests = (
+            db.query(FollowRequest)
+            .filter(FollowRequest.target_id == user_id)
+            .all()
+        )
+
+        followers = []
+        for follower in db_followers:
+            is_following_back = (
+                db.query(Follow)
+                .filter(
+                    Follow.follower_id == user_id,
+                    Follow.following_id == follower.id
+                )
+                .first()
+                is not None
+            )
+
+            followers.append({
+                "user_id": follower.id,
+                "profile_pic": follower.profile_pic,
+                "name": follower.name,
+                "username": follower.username,
+                "phone_number": follower.phone_number,
+                "follow_back": not is_following_back
+            })
+
+        # Use dicts instead of FollowRequestItem
+        pending_requests = []
+        for r in db_requests:
+            if not r.requester:
+                continue  # skip if relationship is broken
+
+            pending_requests.append({
+                "requester_id": r.requester.id,
+                "requester_username": r.requester.username,
+                "requester_profile_pic": r.requester.profile_pic,
+                "created_at": str(r.created_at)  # make it JSON-safe
+            })
+
+        return FollowersList(
+            followers=followers,
+            pending_requests=pending_requests
+        )
+
+    except Exception as e:
+        print("❌ Error in get_followers_svc:", e)
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 # get following
