@@ -26,6 +26,9 @@ class ProfileRequest(BaseModel):
     username: str
     requesting_username: str
 
+class CancelRequestInput(BaseModel):
+    username: str  # target user to whom follow request was sent
+
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 @router.get("/user")
@@ -48,10 +51,22 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
         Follow.following_id == db_user.id
     ).first() is not None
 
+    # ✅ Check if db_user follows requesting_user (mutual follow)
+    is_follows = db.query(Follow).filter(
+        Follow.follower_id == db_user.id,
+        Follow.following_id == requesting_user.id
+    ).first() is not None
+
     # ✅ Check if follow request is pending (is_requested)
     is_requested = db.query(FollowRequest).filter_by(
         requester_id=requesting_user.id,
         target_id=db_user.id
+    ).first() is not None
+
+    # ✅ Check if db_user received a request from requesting_user
+    is_requested_to_me = db.query(FollowRequest).filter_by(
+        requester_id=db_user.id,
+        target_id=requesting_user.id
     ).first() is not None
 
     # ✅ Check if blocked
@@ -76,7 +91,9 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
             **db_user.__dict__,
             "is_following": False,
             "is_blocked": False,
-            "is_requested": False
+            "is_requested": False,
+            "is_requested_to_me": False,
+            "is_follows": False
         }
 
     # ✅ If private and not following — return limited profile + flags
@@ -89,7 +106,9 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
             "is_private": True,
             "is_following": is_following,
             "is_blocked": is_blocked,
-            "is_requested": is_requested
+            "is_requested": is_requested,
+            "is_requested_to_me": is_requested_to_me,
+            "is_follows": is_follows
         }
 
     # ✅ Full profile
@@ -97,7 +116,9 @@ async def profile(request: ProfileRequest, db: Session = Depends(get_db)):
         **db_user.__dict__,
         "is_following": is_following,
         "is_blocked": is_blocked,
-        "is_requested": is_requested
+        "is_requested": is_requested,
+        "is_requested_to_me": is_requested_to_me,
+        "is_follows": is_follows
     }
 
 
@@ -262,6 +283,35 @@ async def pending_follow_requests(
         "requester_profile_pic": r.requester.profile_pic,
         "created_at": r.created_at
     } for r in requests]
+
+
+@router.delete("/follow-requests/cancel", status_code=status.HTTP_200_OK)
+async def cancel_follow_request(
+    request: CancelRequestInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Get the user you originally sent the request to
+    target_user = await get_user_by_username(db, request.username)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user not found")
+
+    # Find the pending request
+    follow_request = db.query(FollowRequest).filter_by(
+        requester_id=current_user.id,
+        target_id=target_user.id
+    ).first()
+
+    if not follow_request:
+        raise HTTPException(
+            status_code=404, detail="No pending follow request found"
+        )
+
+    # Delete the request
+    db.delete(follow_request)
+    db.commit()
+
+    return {"message": "Follow request cancelled successfully."}
 
 
 @router.post("/unfollow", status_code=status.HTTP_200_OK)
