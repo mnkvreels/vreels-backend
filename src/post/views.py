@@ -3,7 +3,7 @@ import re
 
 from io import BytesIO
 from random import choice,randint,uniform,sample
-
+from videolength import get_video_duration_from_url
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
 from sqlalchemy.orm import Session
@@ -790,7 +790,7 @@ async def seed_pexels_posts(
 @router.post("/dev/auto-like-comment-all-users", tags=["dev-utils"])
 def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
     all_users = db.query(User).all()
-    all_posts = db.query(Post).order_by(func.newid()).limit(10).all()
+    all_posts = db.query(Post).order_by(func.newid()).limit(2).all()
 
     sample_comments = [
         "Awesome post!", "Great content!", "🔥🔥🔥", "Loved this one!",
@@ -828,16 +828,14 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
             if not existing:
                 db.execute(insert(post_likes).values(user_id=liker.id, post_id=post.id))
 
-            # 🧠 Simulate media interaction
-            is_video = choice([False]*4 + [True])
-            if is_video:
-                video_length = randint(20, 90)
+            if post.media_type == "video":
+                video_length = get_video_duration_from_url(post.media)
                 watched_time = int(video_length * 0.15)
-                media_type = post.media_type
+                media_type = "video"
             else:
-                video_length = randint(3, 6)  # for photo, simulate short length
-                watched_time = video_length
-                media_type = post.media_type 
+               video_length = 0
+               watched_time = randint(3, 6)
+               media_type = "photo"
 
             db.add(MediaInteraction(
                 user_id=liker.id,
