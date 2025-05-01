@@ -11,7 +11,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
 from src.database import get_db
-from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice
+from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice, FollowRequest
 from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction
 from ..models.activity import Activity
 from .schemas import UserCreate, UserUpdate
@@ -255,6 +255,18 @@ async def block_user_svc(db, blocker_id, blocked_id):
         ((Follow.follower_id == blocked_id) & (Follow.following_id == blocker_id))
     ).all()
     
+    # ✅ 1. Delete mutual follow relationships
+    db.query(Follow).filter(
+        ((Follow.follower_id == blocker_id) & (Follow.following_id == blocked_id)) |
+        ((Follow.follower_id == blocked_id) & (Follow.following_id == blocker_id))
+    ).delete(synchronize_session=False)
+
+    # ✅ 2. Delete any pending follow requests (in either direction)
+    db.query(FollowRequest).filter(
+        ((FollowRequest.requester_id == blocker_id) & (FollowRequest.target_id == blocked_id)) |
+        ((FollowRequest.requester_id == blocked_id) & (FollowRequest.target_id == blocker_id))
+    ).delete(synchronize_session=False)
+
     for f in follow:
         # Adjust follower/following counts
         if f.follower_id == blocker_id:
@@ -518,3 +530,46 @@ async def optional_current_user(request: Request) -> Optional[User]:
         return await get_current_user(request)
     except:
         return None
+
+
+
+# updated login--------------------------------------------------
+# List of country prefixes
+country_prefixes = [
+    "1242", "1246", "1264", "1268", "1340", "1345", "1441", "1473", "1649", "1664", "1671",
+    "1684", "1758", "1767", "1784", "1787", "1809", "1868", "1869", "1876", "211", "213", "216",
+    "220", "221", "222", "224", "225", "226", "227", "228", "229", "231", "232", "235", "237",
+    "238", "239", "240", "241", "242", "243", "244", "245", "248", "249", "250", "252", "2538",
+    "257", "258", "260", "262", "263", "264", "265", "266", "267", "268", "269", "26920", "27",
+    "291", "297", "298", "299", "30", "31", "32", "33", "34", "350", "351", "352", "353", "354",
+    "357", "36", "372", "373", "376", "378", "380", "382", "383", "385", "387", "39", "40", "41",
+    "420", "43", "47", "49", "500", "501", "502", "503", "504", "505", "506", "507", "508", "51",
+    "52", "53", "54", "55", "56", "57", "590", "591", "592", "593", "594", "595", "598", "599",
+    "60", "64", "670", "673", "674", "675", "676", "677", "678", "679", "680", "682", "683", "684",
+    "685", "686", "687", "689", "691", "692", "81", "82", "852", "853", "855", "856", "886", "91",
+    "93", "960", "962", "963", "967", "972", "973", "975", "976", "992", "994", "995", "996", "509"
+]
+
+def check_country_code(phone_number):
+    return any(str(phone_number).startswith(prefix) for prefix in country_prefixes)
+
+# OTP function to store OTP in the database
+async def otp_function(db, user_id, phone_number):
+    if check_country_code(phone_number):
+        otp = await generate_otp(6)
+    elif str(phone_number).startswith("1"):  # Check for US country code (+1)
+        otp = await generate_otp(6)
+    else:
+        otp = "123456"
+
+    otp_details = OTP(
+        user_id=user_id,
+        otp=otp,
+        created_at=datetime.now(timezone.utc),
+    )
+
+    db.add(otp_details)
+    db.commit()
+    db.refresh(otp_details)
+
+    return otp

@@ -7,7 +7,7 @@ from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
 from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes
-from ..models.user import User, Follow, FollowRequest
+from ..models.user import User, Follow, FollowRequest, BlockedUsers
 from ..auth.schemas import User as UserSchema
 from ..models.post import VisibilityEnum
 from ..models.activity import Activity
@@ -78,6 +78,16 @@ async def get_user_posts_svc(
     if not current_user or current_user.id != user_id:
         # If the current user is not the owner, show only public posts
         posts_query = posts_query.filter(Post.visibility == "public")
+
+    # Block check
+    if current_user and current_user.id != user_id:
+        blocked = db.query(BlockedUsers).filter(
+            ((BlockedUsers.blocker_id == current_user.id) & (BlockedUsers.blocked_id == user_id)) |
+            ((BlockedUsers.blocker_id == user_id) & (BlockedUsers.blocked_id == current_user.id))
+        ).first()
+
+        if blocked:
+            raise HTTPException(status_code=403, detail="Posts from this user are not accessible.")
 
     # Count total posts after applying visibility filters
     total_count = posts_query.count()
@@ -229,6 +239,13 @@ async def get_random_posts_svc(
     if offset >= total_count:
         return []
 
+        # 🔒 Get all blocked or blocking users
+    blocked_user_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == current_user.id)
+    ).union(
+        row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == current_user.id)
+    )
+
     # Alias for Follow table
     FollowerAlias = aliased(Follow)
 
@@ -236,6 +253,7 @@ async def get_random_posts_svc(
         db.query(Post, User.username)
         .join(User, Post.author_id == User.id)
         .outerjoin(FollowerAlias, (FollowerAlias.following_id == Post.author_id) & (FollowerAlias.follower_id == current_user.id))  # Check if user follows the author
+        .filter(~Post.author_id.in_(blocked_user_ids))
         .order_by(desc(Post.created_at))
     )
 
@@ -1039,7 +1057,8 @@ async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
             {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
         ]
     }
- 
+
+''' 
 async def search_users_svc(query: str, db: Session, current_user: User, page: int, limit: int):
     offset = (page - 1) * limit
 
@@ -1110,7 +1129,92 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
         ]
     }
 
-    
+'''
+
+async def search_users_svc(query: str, db: Session, current_user: User, page: int, limit: int):
+    offset = (page - 1) * limit
+
+    # 🔒 Get all blocked or blocking users
+    blocked_user_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocked_id)
+        .filter(BlockedUsers.blocker_id == current_user.id)
+    )
+    blocked_by_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocker_id)
+        .filter(BlockedUsers.blocked_id == current_user.id)
+    )
+    excluded_user_ids = blocked_user_ids.union(blocked_by_ids)
+
+    # Total matching users count (excluding blocked)
+    total_count = (
+        db.query(User.id)
+        .filter(User.username.ilike(f"%{query}%"))
+        .filter(~User.id.in_(excluded_user_ids))
+        .count()
+    )
+    total_pages = max(1, math.ceil(total_count / limit))
+
+    users = (
+        db.query(
+            User.id,
+            User.username,
+            User.profile_pic,
+            User.name,
+            User.bio,
+            User.phone_number,
+            func.count(Follow.follower_id).label("followers_count")
+        )
+        .outerjoin(Follow, Follow.following_id == User.id)
+        .filter(User.username.ilike(f"%{query}%"))
+        .filter(~User.id.in_(excluded_user_ids))  # 🔒 enforce block
+        .group_by(User.id, User.username, User.profile_pic, User.name, User.bio, User.phone_number)
+        .order_by(func.count(Follow.follower_id).desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    following_ids = set(
+        row[0] for row in db.query(Follow.following_id)
+        .filter(Follow.follower_id == current_user.id)
+        .all()
+    )
+    requested_ids = set(
+        row[0] for row in db.query(FollowRequest.target_id)
+        .filter(FollowRequest.requester_id == current_user.id)
+        .all()
+    )
+    incoming_request_ids = set(
+        row[0] for row in db.query(FollowRequest.requester_id)
+        .filter(FollowRequest.target_id == current_user.id)
+        .all()
+    )
+
+    return {
+        "metadata": {
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "current_page": page,
+            "limit": limit
+        },
+        "items": [
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "profile_pic": user.profile_pic,
+                "name": user.name,
+                "bio": user.bio,
+                "phone_number": user.phone_number,
+                "followers_count": user.followers_count,
+                "is_following": user.id in following_ids,
+                "is_requested": user.id in requested_ids,
+                "is_requested_to_me": user.id in incoming_request_ids,
+                "is_self": user.id == current_user.id
+            }
+            for user in users
+        ]
+    }
+
 
 async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
     # Correct count using post_likes
