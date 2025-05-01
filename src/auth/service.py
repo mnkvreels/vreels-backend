@@ -239,37 +239,43 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     return db.query(User).filter(User.id == db_user.id).first()
 
 async def block_user_svc(db, blocker_id, blocked_id):
-    # Ensure both users exist
     blocker = db.query(User).filter(User.id == blocker_id).first()
     blocked = db.query(User).filter(User.id == blocked_id).first()
     
-    if not blocker:
-        raise ValueError(f"Blocker with ID {blocker_id} does not exist")
-    if not blocked:
-        raise ValueError(f"Blocked user with ID {blocked_id} does not exist")
+    if not blocker or not blocked:
+        raise ValueError("Invalid blocker or blocked user ID")
     
-    # Check if the user is already blocked
-    existing_block = db.query(BlockedUsers).filter(
-        BlockedUsers.blocker_id == blocker_id,
-        BlockedUsers.blocked_id == blocked_id
-    ).first()
-    
-    if existing_block:
-        # Return False to indicate that the user is already blocked
+    # Check if already blocked
+    if db.query(BlockedUsers).filter_by(blocker_id=blocker_id, blocked_id=blocked_id).first():
         return False
+
+    # Remove follow relationship if exists
+    follow = db.query(Follow).filter(
+        ((Follow.follower_id == blocker_id) & (Follow.following_id == blocked_id)) |
+        ((Follow.follower_id == blocked_id) & (Follow.following_id == blocker_id))
+    ).all()
     
-    # Add the new block if no existing block is found
-    new_block = BlockedUsers(blocker_id=blocker_id, blocked_id=blocked_id)
-    db.add(new_block)
+    for f in follow:
+        # Adjust follower/following counts
+        if f.follower_id == blocker_id:
+            blocker.following_count -= 1
+            blocked.followers_count -= 1
+        else:
+            blocked.following_count -= 1
+            blocker.followers_count -= 1
+        db.delete(f)
+
+    # Add the block
+    db.add(BlockedUsers(blocker_id=blocker_id, blocked_id=blocked_id))
     db.commit()
     
     # Return True to indicate the user has been successfully blocked
     return True
 
 async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
-    existing_block = db.query(BlockedUsers).filter(
-        BlockedUsers.blocker_id == blocker_id,
-        BlockedUsers.blocked_id == blocked_id
+    existing_block = db.query(BlockedUsers).filter_by(
+        blocker_id=blocker_id,
+        blocked_id=blocked_id
     ).first()
 
     if not existing_block:
