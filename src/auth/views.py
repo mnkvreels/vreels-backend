@@ -466,3 +466,152 @@ def get_synced_contacts(device_id: str, db: Session = Depends(get_db), current_u
         raise HTTPException(status_code=404, detail="Device not found.")
     contacts = db.query(UserDeviceContact).filter_by(user_device_id=user_device.id).all()
     return contacts
+
+
+# updated login--------------------------------------------------
+
+# send otp endpoint
+@router.post("/app-login", status_code=status.HTTP_200_OK)
+async def app_login(user: UserUpdate, db: Session = Depends(get_db)):
+    # Check if user exists in the database (based on phone number in 'users' table)
+    db_user = await authenticateMobile(db, user.phone_number)
+
+    if db_user:
+        # If user exists, generate OTP for the existing user and send it
+        otp_value = await otp_function(db, db_user.id, user.phone_number)
+        sms_status = await send_sms(user.phone_number, otp_value)
+
+        if sms_status:
+            return {"message": "OTP sent successfully", "user_id": db_user.id}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP",
+            )
+    else:
+        # If user does not exist, insert user mobile number into the 'users' table
+        new_user = User(phone_number=user.phone_number)
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        # Generate OTP and send SMS
+        otp_value = await otp_function(db, db_user.id, user.phone_number)
+        sms_status = await send_sms(user.phone_number, otp_value)
+
+        if sms_status:
+            return {"message": "OTP sent successfully", "user_id": db_user.id}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP",
+            )
+
+
+@router.post("/verification-otp", status_code=status.HTTP_200_OK)
+async def verification_otp(user_id: int = Form(...), otp: str = Form(...), db: Session = Depends(get_db)):
+    otp_record = db.query(OTP).filter(OTP.user_id == user_id, OTP.otp == otp).order_by(OTP.created_at.desc()).first()
+
+    # Check if OTP exists
+    if not otp_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP",
+        )
+
+    # Handle naive datetime properly
+    if otp_record.created_at.tzinfo is None:
+        created_at_aware = otp_record.created_at.replace(tzinfo=timezone.utc)
+    else:
+        created_at_aware = otp_record.created_at
+
+    # Check OTP expiry
+    if datetime.now(timezone.utc) > created_at_aware + timedelta(minutes=5):
+        # Optionally, you can delete expired OTPs here, or leave them in the DB
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired",
+        )
+
+        # Delete the OTP record after successful verification
+    db.delete(otp_record)
+    db.commit()
+
+    db_user = await authenticateUserID(db, user_id)
+    if db_user.username and db_user.username != "":
+        # Generate access token if username exists and is not empty
+        access_token = await create_access_token(db_user.username, user_id)
+        return {
+            "message": "OTP verified successfully",
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": user_id,
+            "user": db_user,
+        }
+    else:
+        # Handle case when username is missing or empty
+        # access_token = await create_access_token(db_user.username, user_id)
+        return {
+            "message": "OTP verified successfully",
+            "user": db_user,
+            "access_token": "",
+            "token_type": "bearer",
+            "user_id": user_id
+        }
+
+#  update profile first time login
+@router.put("/user-profile-setup")
+async def user_profile_setup(
+    username: str = Form(None),
+    name: str = Form(None),
+    bio: str = Form(None),
+    dob: str = Form(None),
+    email: str = Form(None),
+    gender: GenderEnum = Form(None),
+    location: str = Form(None),
+    account_type: AccountTypeEnum = Form(None),
+    profile_pic: UploadFile = File(None),  # Accept profile picture
+    user_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    # Fetch user from DB
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prepare update data dictionary
+    user_update_data = {
+        "username": username,
+        "name": name,
+        "bio": bio,
+        "dob": dob,
+        "email": email,
+        "gender": gender,
+        "location": location,
+        "account_type": account_type,
+    }
+    filtered_data = {k: v for k, v in user_update_data.items() if v is not None}
+    user_update = UserUpdate(**filtered_data)
+
+    # Handle profile picture upload
+    if profile_pic:
+        new_profile_pic_url, media_type, thumbnail_url = await upload_to_azure_blob(
+            profile_pic, db_user.username or f"user_{db_user.id}", str(db_user.id)
+        )
+        user_update.profile_pic = new_profile_pic_url
+
+    # Call the update service
+    updated_user = await update_user_svc(db, db_user, user_update)
+
+    # Generate access token
+    access_token = await create_access_token(updated_user.username, updated_user.id)
+
+    return {
+        "message": "Profile updated successfully",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": updated_user.id,
+        "user":user_update_data
+    }
+
+
