@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import os
 from fastapi import UploadFile
 
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from PIL import Image
 from time import sleep
 from io import BytesIO
