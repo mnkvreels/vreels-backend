@@ -1,7 +1,7 @@
 import requests
 import tempfile
 import os
-from moviepy import VideoFileClip
+from moviepy.editor import VideoFileClip
 
 
 # ✅ STEP 4: Function to get real video duration from URL
