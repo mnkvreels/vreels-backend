@@ -253,6 +253,7 @@ async def get_random_posts_svc(
         db.query(Post, User.username)
         .join(User, Post.author_id == User.id)
         .outerjoin(FollowerAlias, (FollowerAlias.following_id == Post.author_id) & (FollowerAlias.follower_id == current_user.id))  # Check if user follows the author
+        .filter(~Post.author_id.in_(blocked_user_ids))
         .order_by(desc(Post.created_at))
     )
 

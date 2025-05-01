@@ -790,7 +790,7 @@ async def seed_pexels_posts(
 @router.post("/dev/auto-like-comment-all-users", tags=["dev-utils"])
 def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
     all_users = db.query(User).all()
-    all_posts = db.query(Post).order_by(func.newid()).limit(2).all()
+    all_posts = db.query(Post).order_by(func.newid()).limit(5).all()
 
     sample_comments = [
         "Awesome post!", "Great content!", "🔥🔥🔥", "Loved this one!",
@@ -835,7 +835,7 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
             else:
                video_length = 0
                watched_time = randint(3, 6)
-               media_type = "photo"
+               media_type = "image"
 
             db.add(MediaInteraction(
                 user_id=liker.id,
