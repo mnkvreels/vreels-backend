@@ -496,11 +496,11 @@ async def app_login(user: UserUpdate, db: Session = Depends(get_db)):
         db.refresh(new_user)
 
         # Generate OTP and send SMS
-        otp_value = await otp_function(db, db_user.id, user.phone_number)
+        otp_value = await otp_function(db, new_user.id, user.phone_number)
         sms_status = await send_sms(user.phone_number, otp_value)
 
         if sms_status:
-            return {"message": "OTP sent successfully", "user_id": db_user.id}
+            return {"message": "OTP sent successfully", "user_id": new_user.id}
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -596,7 +596,7 @@ async def user_profile_setup(
     # Handle profile picture upload
     if profile_pic:
         new_profile_pic_url, media_type, thumbnail_url = await upload_to_azure_blob(
-            profile_pic, db_user.username or f"user_{db_user.id}", str(db_user.id)
+            profile_pic, username or f"user_{db_user.id}", str(db_user.id)
         )
         user_update.profile_pic = new_profile_pic_url
 
