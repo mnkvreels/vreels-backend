@@ -138,11 +138,12 @@ async def update_profile(
     location: str = Form(None),
     account_type: AccountTypeEnum = Form(None),
     profile_pic: UploadFile = File(None),  # Accept profile picture
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
     # Create a UserUpdate object
     user_update = UserUpdate(
+        username=current_user.username,
         name=name,
         bio=bio,
         dob=dob,

@@ -30,6 +30,7 @@ class UserUpdate(BaseModel):
     UserUpdate class represents the fields that can be updated for a user.
     All fields are optional for partial updates.
     """
+    username: Optional[str] = None
     name: Optional[str] = None  # User's full name (optional)
     dob: Optional[date] = None  # User's date of birth (optional)
     gender: Optional[GenderEnum] = None  # User's gender (optional)
