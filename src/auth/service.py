@@ -233,6 +233,7 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     db_user.location = user_update.location or db_user.location
     db_user.account_type = user_update.account_type or db_user.account_type
     db_user.profile_pic = user_update.profile_pic or db_user.profile_pic
+    db_user.username = user_update.username or db_user.username
 
     db.commit()
     db.refresh(db_user)  # Refresh the user instance to get updated data
