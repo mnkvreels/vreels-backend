@@ -27,26 +27,25 @@ def get_video_duration_from_url(video_url: str) -> int:
         print("❌ Error getting video duration:", e)
         return 0
 
-# ✅ STEP 1: Import your existing DB connection and Post model
-from src.database import SessionLocal  # Adjust if path is different
-from src.models import Post            # Make sure Post has media_url and media_type
 
-# ✅ STEP 2: Create DB session
-db = SessionLocal()
+# ✅ Only run this block when directly executed, NOT on import
+if __name__ == "_main_":
+    from src.database import SessionLocal
+    from src.models import Post
 
-# ✅ STEP 3: Query one video post from DB
-video_post = db.query(Post).filter(
-    Post.media_type == "video",
-    Post.media.isnot(None),
-    Post.media != ''
-).first()
+    db = SessionLocal()
 
-video_url = video_post.media
-print("🎯 Video URL from DB:", video_url)
+    video_post = db.query(Post).filter(
+        Post.media_type == "video",
+        Post.media.isnot(None),
+        Post.media != ''
+    ).first()
 
-if not video_url:
-    print("❌ No video URL found in the post.")
-    exit()
+    video_url = video_post.media if video_post else None
+    print("🎯 Video URL from DB:", video_url)
 
-duration = get_video_duration_from_url(video_url)
-print("🎥 Actual Video Duration:", duration, "seconds")
+    if not video_url:
+        print("❌ No video URL found in the post.")
+    else:
+        duration = get_video_duration_from_url(video_url)
+        print("🎥 Actual Video Duration:", duration, "seconds")
