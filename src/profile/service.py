@@ -307,12 +307,28 @@ async def get_suggested_users_svc(db: Session, user_id: int, limit: int = 10):
         # Build response
         suggestions = []
         for user in combined_results:
+            # Check if follow request is pending
+            is_requested = db.query(FollowRequest).filter_by(
+                requester_id=user_id,
+                target_id=user.id
+            ).first() is not None
+
+            # Check if already following
+            is_following = db.query(Follow).filter_by(
+                follower_id=user_id,
+                following_id=user.id
+            ).first() is not None
+
             suggestions.append({
                 "id": user.id,
                 "username": user.username,
                 "full_name": user.name,
-                "profile_picture_url": user.profile_pic
+                "profile_picture_url": user.profile_pic,
+                "account_type": user.account_type,
+                "is_following": is_following,
+                "is_requested": is_requested
             })
+
 
         return {
             "total_count": total_count,
