@@ -359,8 +359,8 @@ async def unlike_post(request: PostRequest, db: Session = Depends(get_db), curre
     return {"message": "Unliked the post"}
 
 @router.get("/postlikes")
-async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db)):
-    likes = await get_likes_for_post_svc(db, request.post_id, page, limit)
+async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    likes = await get_likes_for_post_svc(db,current_user, request.post_id, page, limit)
     if not likes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No likes found")
     
