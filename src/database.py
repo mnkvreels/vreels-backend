@@ -2,7 +2,7 @@ import os
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
-
+from dotenv import load_dotenv
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL","mssql+pyodbc://sqladmin:MnkLlc%4025@sqlddatabbasedemo.database.windows.net:1433/vreeels_django_database?driver=ODBC+Driver+17+for+SQL+Server")
 
