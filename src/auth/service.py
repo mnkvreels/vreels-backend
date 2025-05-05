@@ -23,6 +23,7 @@ import bcrypt
 from ..config import Settings
 from ..notification_service import send_push_notification
 from azure.communication.sms import SmsClient, SmsSendResult
+from .schemas import UserIdRequest
 # Password hashing context using bcrypt
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -240,14 +241,20 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     db.refresh(db_user)  # Refresh the user instance to get updated data
     return db.query(User).filter(User.id == db_user.id).first()
 
-async def block_user_svc(db, blocker_id, blocked_id):
+async def block_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
     blocker = db.query(User).filter(User.id == blocker_id).first()
-    blocked = db.query(User).filter(User.id == blocked_id).first()
-    
+
+    blocked = None
+    if request.user_id:
+        blocked = db.query(User).filter(User.id == request.user_id).first()
+    elif request.username:
+        blocked = db.query(User).filter(User.username == request.username).first()
+
     if not blocker or not blocked:
-        raise ValueError("Invalid blocker or blocked user ID")
-    
-    # Check if already blocked
+        raise ValueError("Invalid blocker or blocked user")
+
+    blocked_id = blocked.id
+
     if db.query(BlockedUsers).filter_by(blocker_id=blocker_id, blocked_id=blocked_id).first():
         return False
 
@@ -272,21 +279,29 @@ async def block_user_svc(db, blocker_id, blocked_id):
     for f in follow:
         # Adjust follower/following counts
         if f.follower_id == blocker_id:
-            blocker.following_count -= 1
-            blocked.followers_count -= 1
+            blocker.following_count = max(0, blocker.following_count - 1)
+            blocked.followers_count = max(0, blocked.followers_count - 1)
         else:
-            blocked.following_count -= 1
-            blocker.followers_count -= 1
-        db.delete(f)
+            blocked.following_count = max(0, blocked.following_count - 1)
+            blocker.followers_count = max(0, blocker.followers_count - 1)
 
-    # Add the block
     db.add(BlockedUsers(blocker_id=blocker_id, blocked_id=blocked_id))
     db.commit()
     
     # Return True to indicate the user has been successfully blocked
     return True
 
-async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
+async def unblock_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
+    blocked = None
+    if request.user_id:
+        blocked = db.query(User).filter(User.id == request.user_id).first()
+    elif request.username:
+        blocked = db.query(User).filter(User.username == request.username).first()
+
+    if not blocked:
+        raise ValueError("Blocked user not found")
+
+    blocked_id = blocked.id
     existing_block = db.query(BlockedUsers).filter_by(
         blocker_id=blocker_id,
         blocked_id=blocked_id

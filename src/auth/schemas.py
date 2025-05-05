@@ -75,7 +75,8 @@ class User(UserBase, UserUpdate):
 #     new_password: str
 
 class UserIdRequest(BaseModel):
-    user_id: int
+    user_id: Optional[int]
+    username: Optional[str]
     
 class DeviceTokenRequest(BaseModel):
     device_id: str

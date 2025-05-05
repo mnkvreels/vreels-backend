@@ -249,13 +249,13 @@ async def block_user(
     """
     Block a user by adding an entry to the blocked_users table.
     """
-    if current_user.id == request.user_id:
+    if current_user.id == request.user_id or current_user.username == request.username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="You cannot block yourself"
         )
     
-    blocked = await block_user_svc(db, current_user.id, request.user_id)
+    blocked = await block_user_svc(db, current_user.id, request)
     if blocked:
         return {"message": "User successfully blocked"}
     else:
@@ -273,7 +273,7 @@ async def unblock_user(
     """
     Unblock a user by removing the entry from the blocked_users table.
     """
-    unblocked = await unblock_user_svc(db, current_user.id, request.user_id)
+    unblocked = await unblock_user_svc(db, current_user.id, request)
     if unblocked:
         return {"message": "User successfully unblocked"}
     else:
