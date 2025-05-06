@@ -94,6 +94,7 @@ async def create_post(
     location: Optional[str] = Form(None),
     category_of_content: Optional[str] = Form(None),
     video_length: Optional[int] = Form(None),
+    hashtags: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -108,7 +109,9 @@ async def create_post(
             file_url, media_type, thumbnail_url = await upload_and_compress(file,user.username,str(user.id))
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-        
+
+    hashtags_list = [tag.strip() for tag in hashtags.split(",")] if hashtags else []
+    
     post = PostCreate(
         content=content,
         location=location,
@@ -116,7 +119,8 @@ async def create_post(
         category_of_content=category_of_content,
         media_type=media_type,
         thumbnail=thumbnail_url,
-        video_length=0 if media_type == "image" else video_length
+        video_length=0 if media_type == "image" else video_length,
+        hashtags=hashtags_list
     )
 
     # Create the post with the file URL (if any)

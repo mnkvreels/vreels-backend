@@ -60,6 +60,7 @@ class PostCreate(BaseModel):
     media_type: Optional[str]
     thumbnail: Optional[str]
     video_length: Optional[int] = None
+    hashtags: Optional[List[str]] = []
 
     class Config:
         orm_mode = True
