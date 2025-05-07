@@ -8,3 +8,4 @@ class VisibilityEnum(str, enum.Enum):
 class MediaTypeEnum(str, enum.Enum):
     image = "image"
     video = "video"
+    photo = "photo"

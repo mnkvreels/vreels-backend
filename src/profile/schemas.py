@@ -51,6 +51,9 @@ class SuggestedUser(BaseModel):
     username: str
     full_name: Optional [str] = None
     profile_picture_url: Optional [str]  = None
+    account_type: Optional[AccountTypeEnum] = None  # 👈 Add this
+    is_following: bool = False                      # 👈 Add this
+    is_requested: bool = False                      # 👈 Add this
 
 class SuggestedUserResponse(BaseModel):
     total_count: int

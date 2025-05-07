@@ -359,8 +359,8 @@ async def unlike_post(request: PostRequest, db: Session = Depends(get_db), curre
     return {"message": "Unliked the post"}
 
 @router.get("/postlikes")
-async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db)):
-    likes = await get_likes_for_post_svc(db, request.post_id, page, limit)
+async def get_likes_for_post(page: int, limit: int, request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    likes = await get_likes_for_post_svc(db,current_user, request.post_id, page, limit)
     if not likes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No likes found")
     
@@ -451,9 +451,10 @@ async def get_comments_for_post(
     page: int,
     limit: int,
     request: PostRequest, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    comments = await get_comments_for_post_svc(db, request.post_id, page, limit)
+    comments = await get_comments_for_post_svc(db,current_user, request.post_id, page, limit)
     if not comments:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
     
@@ -729,13 +730,22 @@ async def seed_pexels_posts(
                             upload_file, current_user.username, str(current_user.id)
                         )
 
+                    # ✅ Format content: "beautiful-mountain-landscape #category"
+                    detail_url = image.get("url", "")  # or video.get("url", "")
+                    raw_slug = detail_url.rstrip("/").split("/")[-1]
+                    clean_slug = " ".join(raw_slug.split("-")[:-1])
+                    formatted_slug = clean_slug.capitalize()
+                    hashtag = f"#{payload.category.lower().replace(' ', '')}"
+                    content = f"{formatted_slug} {hashtag}"
+
+
                     post = PostCreate(
-                        content=f"📸 Auto post from Pexels",
+                        content=content,
                         location="Test Location",
                         visibility=VisibilityEnum.public,
                         category_of_content=payload.category,
-                        media_type=media_type,
-                        thumbnail=thumbnail_url
+                        media_type=media_type
+                        
 
                     )
                     created_post = await create_post_svc(db, post, current_user.id, azure_url)
@@ -767,9 +777,17 @@ async def seed_pexels_posts(
                         azure_url, media_type, thumbnail_url = await upload_and_compress(
                             upload_file, current_user.username, str(current_user.id)
                         )
+                    
+                    detail_url = video.get("url", "")  # or video.get("url", "")
+                    raw_slug = detail_url.rstrip("/").split("/")[-1]
+                    clean_slug = " ".join(raw_slug.split("-")[:-1])
+                    formatted_slug = clean_slug.capitalize()
+                    hashtag = f"#{payload.category.lower().replace(' ', '')}"
+                    content = f"{formatted_slug} {hashtag}"
+
 
                     post = PostCreate(
-                        content=f"🎥 Auto post from Pexels",
+                        content=content,
                         location="Test Location",
                         visibility=VisibilityEnum.public,
                         category_of_content=payload.category,
