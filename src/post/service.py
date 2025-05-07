@@ -575,7 +575,7 @@ async def delete_comments_svc(db: Session, post_id: int, user_id: int, comment_i
 
 
 # Get comments for a post
-async def get_comments_for_post_svc(db: Session, post_id: int, page: int, limit: int):
+async def get_comments_for_post_svc(db: Session, current_user: User, post_id: int, page: int, limit: int):
     offset = (page - 1) * limit
 
     # 🔒 Get all users blocked by or blocking current user
