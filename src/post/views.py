@@ -451,9 +451,10 @@ async def get_comments_for_post(
     page: int,
     limit: int,
     request: PostRequest, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    comments = await get_comments_for_post_svc(db, request.post_id, page, limit)
+    comments = await get_comments_for_post_svc(db,current_user, request.post_id, page, limit)
     if not comments:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
     
