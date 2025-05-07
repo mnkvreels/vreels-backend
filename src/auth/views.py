@@ -580,6 +580,12 @@ async def user_profile_setup(
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+        # ✅ Check if username already exists for another user
+    if username:
+        existing_user = db.query(User).filter(User.username == username, User.id != user_id).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already exists")
+
     # Prepare update data dictionary
     user_update_data = {
         "username": username,
@@ -614,5 +620,3 @@ async def user_profile_setup(
         "user_id": updated_user.id,
         "user":user_update_data
     }
-
-
