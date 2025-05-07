@@ -247,7 +247,7 @@ async def get_random_posts_svc(
     if offset >= total_count:
         return []
 
-        # 🔒 Get all blocked or blocking users
+    # 🔒 Get all blocked or blocking users
     blocked_user_ids = set(
         row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == current_user.id)
     ).union(
@@ -258,27 +258,35 @@ async def get_random_posts_svc(
     FollowerAlias = aliased(Follow)
 
     posts_query = (
-        db.query(Post, User.username)
+        db.query(Post, User.username, User.account_type)
         .join(User, Post.author_id == User.id)
         .outerjoin(FollowerAlias, (FollowerAlias.following_id == Post.author_id) & (FollowerAlias.follower_id == current_user.id))  # Check if user follows the author
         .filter(~Post.author_id.in_(blocked_user_ids))
-        .order_by(desc(Post.created_at))
+        .filter(Post.visibility != "private")  # ❌ Always exclude 'private' visibility
+        .filter(
+            (User.account_type != "private")  # ✅ Public accounts
+            | (FollowerAlias.follower_id != None)  # ✅ Private accounts → must follow them
+            | (Post.author_id == current_user.id)  # ✅ Always show your own posts
+        )
+        #.order_by(desc(Post.created_at))
     )
 
     if hashtag:
         posts_query = posts_query.join(post_hashtags).join(Hashtag).filter(Hashtag.name == hashtag)
-
+    '''
     # Apply visibility filters
     posts_query = posts_query.filter(
         (Post.visibility != "private") | (Post.author_id == current_user.id)  # Include private only if it's the user's post
     ).filter(
         (Post.visibility != "friends") | (FollowerAlias.follower_id != None)  # Include friends only if the user follows the author
     )
-
+    '''
+    posts_query = posts_query.order_by(desc(Post.created_at))
+    total_count = posts_query.count()
     posts = posts_query.offset(offset).limit(limit).all()
 
     result = []
-    for post, username in posts:
+    for post, username, _ in posts:
         post_dict = post.__dict__.copy()
         post_dict["username"] = username
         hashtags = (
@@ -578,8 +586,19 @@ async def delete_comments_svc(db: Session, post_id: int, user_id: int, comment_i
 async def get_comments_for_post_svc(db: Session, post_id: int, page: int, limit: int):
     offset = (page - 1) * limit
 
+    # 🔒 Get all users blocked by or blocking current user
+    blocked_user_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == current_user.id)
+    ).union(
+        row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == current_user.id)
+    )
+
     # Get total count of comments
-    total_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post_id).scalar()
+    total_count = ( db.query(func.count(Comment.id))
+    .filter(Comment.post_id == post_id)
+    .filter(~Comment.user_id.in_(blocked_user_ids))
+    .scalar()
+    )
     total_pages = math.ceil(total_count / limit) if total_count > 0 else 1
 
     # Get paginated comments
@@ -587,6 +606,7 @@ async def get_comments_for_post_svc(db: Session, post_id: int, page: int, limit:
         db.query(Comment)
         .options(joinedload(Comment.user))  # Load related User data
         .filter(Comment.post_id == post_id)
+        .filter(~Comment.user_id.in_(blocked_user_ids))  # Exclude blocked users' comments
         .order_by(desc(Comment.created_at))  # Order by latest comments first
         .offset(offset)
         .limit(limit)
@@ -611,19 +631,40 @@ async def get_comments_for_post_svc(db: Session, post_id: int, page: int, limit:
         ]
     }
 
-async def get_likes_for_post_svc(db: Session, post_id: int, page: int, limit: int):
+async def get_likes_for_post_svc(
+    db: Session, current_user: User, post_id: int, page: int, limit: int
+):
     offset = (page - 1) * limit
 
-    # Get total count of likes
-    total_count = db.query(func.count(Like.id)).filter(Like.post_id == post_id).scalar()
+    # ✅ First, get the post author_id
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    post_author_id = post.author_id
+
+    # ✅ Get users blocked by OR blocking the post author
+    blocked_user_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == post_author_id)
+    ).union(
+        row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == post_author_id)
+    )
+
+    # ✅ Filter likes excluding blocked users
+    total_count = (
+        db.query(func.count(Like.id))
+        .filter(Like.post_id == post_id)
+        .filter(~Like.user_id.in_(blocked_user_ids))
+        .scalar()
+    )
+
     total_pages = math.ceil(total_count / limit) if total_count > 0 else 1
 
-    # Get paginated likes
     likes = (
         db.query(Like)
-        .options(joinedload(Like.user))  # Load related User data
+        .options(joinedload(Like.user))
         .filter(Like.post_id == post_id)
-        .order_by(desc(Like.created_at))  # Order by latest likes first
+        .filter(~Like.user_id.in_(blocked_user_ids))
+        .order_by(desc(Like.created_at))
         .offset(offset)
         .limit(limit)
         .all()
@@ -644,6 +685,7 @@ async def get_likes_for_post_svc(db: Session, post_id: int, page: int, limit: in
             for like in likes
         ]
     }
+
 
 async def save_post_svc(db: Session, user_id: int, post_id: int):
     # Check if post is already saved by user
@@ -705,9 +747,25 @@ async def unsave_post_svc(db: Session, user_id: int, post_id: int):
 
 async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
     offset = (page - 1) * limit
+    # Blocked users: anyone the current user blocked or who blocked them
+    blocked_user_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == user_id)
+    ).union(
+        row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == user_id)
+    )
+    '''
     total_count = (
         db.query(UserSavedPosts)
         .filter(UserSavedPosts.user_id == user_id)
+        .count()
+    )
+    '''
+        # Get total count excluding blocked posts
+    total_count = (
+        db.query(UserSavedPosts)
+        .join(Post, UserSavedPosts.saved_post_id == Post.id)
+        .filter(UserSavedPosts.user_id == user_id)
+        .filter(~Post.author_id.in_(blocked_user_ids))
         .count()
     )
     liked_post_ids = set(
@@ -749,6 +807,7 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
         .join(Post, UserSavedPosts.saved_post_id == Post.id)
         .join(User, Post.author_id == User.id)
         .filter(UserSavedPosts.user_id == user_id)
+        .filter(~Post.author_id.in_(blocked_user_ids))  # ❌ Exclude blocked users' posts
         .order_by(desc(UserSavedPosts.created_at))
         .offset(offset).limit(limit)
         .all()
@@ -1225,11 +1284,19 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
 
 
 async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
+
+    # 🔒 Get all blocked or blocking users
+    blocked_user_ids = set(
+        row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == user_id)
+    ).union(
+        row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == user_id)
+    )
     # Correct count using post_likes
     total_count = (
         db.query(func.count(Post.id))
         .join(post_likes, Post.id == post_likes.c.post_id)
         .filter(post_likes.c.user_id == user_id)
+        .filter(~Post.author_id.in_(blocked_user_ids))
         .scalar()
     )
 
@@ -1248,6 +1315,7 @@ async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: 
         db.query(Post)
         .join(post_likes, Post.id == post_likes.c.post_id)
         .filter(post_likes.c.user_id == user_id)
+        .filter(~Post.author_id.in_(blocked_user_ids))
         .order_by(desc(Post.created_at))
         .offset(offset)
         .limit(limit)
