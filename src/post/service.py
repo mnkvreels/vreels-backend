@@ -55,6 +55,7 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
         media_type=post.media_type,
         thumbnail= post.thumbnail,
         video_length=post.video_length,
+        comments_disabled=post.comments_disabled
     )
 
     await create_hashtags_svc(db, db_post, post.hashtags)

@@ -393,7 +393,9 @@ async def comment_on_post(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-
+    post: Post = db.query(Post).get(request.post_id)
+    if post.comments_disabled:
+        raise HTTPException(status_code=403, detail="Commenting is disabled on this post.")
     res, detail = await comment_on_post_svc(db, request.post_id, user.id, request.content)
     if not res:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
