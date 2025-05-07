@@ -309,7 +309,7 @@ async def get_random_posts(
     return await get_random_posts_svc(current_user, db, page, limit, hashtag)
 
 
-@router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/", status_code=status.HTTP_200_OK)
 async def delete_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # verify the token
     user = current_user
@@ -327,7 +327,7 @@ async def delete_post(request: PostRequest, db: Session = Depends(get_db), curre
         )
 
     await delete_post_svc(db, request.post_id)
-
+    return {"message": "Post deleted successfully"}
 
 @router.post("/like", status_code=status.HTTP_200_OK)
 async def like_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
