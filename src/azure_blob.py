@@ -21,10 +21,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Azure Blob Storage Configuration
-AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
+AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING", "DefaultEndpointsProtocol=https;AccountName=vreelsstorage;AccountKey=YkdFdR/UTuWKJnB4nmYJPV+NaqgsP9Vy3LVHIJ2R6m10jWM4v2a141Fh0HA+95BNs5PH6k/OTO2X+AStlUmb6Q==;EndpointSuffix=core.windows.net")
 AZURE_IMAGE_CONTAINER = os.getenv("AZURE_IMAGE_CONTAINER", "images")
 AZURE_VIDEO_CONTAINER = os.getenv("AZURE_VIDEO_CONTAINER", "videos")
-CDN_BASE_URL = os.getenv("CDN_BASE_URL")
+CDN_BASE_URL = os.getenv("CDN_BASE_URL", "https://vreelspostscdn-fmedgweqdkc6fah5.z01.azurefd.net")
 
 # Initialize BlobServiceClient
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)

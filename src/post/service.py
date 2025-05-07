@@ -570,6 +570,10 @@ async def delete_comments_svc(db: Session, post_id: int, user_id: int, comment_i
     for comment in comments:
         db.delete(comment)
 
+    db.flush()  # ✅ Ensure the deleted comments are flushed before counting
+
+    post.comments_count = db.query(Comment).filter(Comment.post_id == post_id).count()
+
     db.commit()
     return len(comments) 
 
