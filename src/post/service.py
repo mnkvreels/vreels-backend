@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session, joinedload, aliased
 from sqlalchemy.sql import case
 import re
 import math
-from typing import Union, Optional
+from typing import Union, Optional, List
 from sqlalchemy import desc, func, select
 from fastapi import HTTPException
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
@@ -16,22 +16,30 @@ from datetime import datetime
 
 # create hashtag from posts' content
 # hey #fun
-async def create_hashtags_svc(db: Session, post: Post):
+async def create_hashtags_svc(db: Session, post: Post, raw_hashtags: Optional[List[str]]):
+    # Combine provided and content-extracted hashtags into a unique set
+    hashtags = set(raw_hashtags or [])
+
     if post.content:
-        regex = r"#\w+"
-        matches = re.findall(regex, post.content)
+        matches = re.findall(r"#(\w+)", post.content)
+        hashtags.update(matches)
 
-        for match in matches:
-            name = match[1:]
+    if not hashtags:
+        post.hashtags = []
+        return
 
-            hashtag = db.query(Hashtag).filter(Hashtag.name == name).first()
-            if not hashtag:
-                hashtag = Hashtag(name=name)
-                db.add(hashtag)
-                db.commit()
-            post.hashtags.append(hashtag)
-    else:
-        matches = []
+    # Fetch all existing hashtags in one query
+    existing_hashtags = db.query(Hashtag).filter(Hashtag.name.in_(hashtags)).all()
+    existing_names = {h.name for h in existing_hashtags}
+
+    # Create new ones for names not yet in DB
+    new_hashtags = [Hashtag(name=name) for name in hashtags if name not in existing_names]
+    if new_hashtags:
+        db.add_all(new_hashtags)
+        db.flush()  # ensures IDs are assigned
+
+    # Combine both
+    post.hashtags = existing_hashtags + new_hashtags
 
 
 # create post
@@ -47,9 +55,10 @@ async def create_post_svc(db: Session, post: PostCreate, user_id: int, file_url:
         media_type=post.media_type,
         thumbnail= post.thumbnail,
         video_length=post.video_length,
+        comments_disabled=post.comments_disabled
     )
 
-    await create_hashtags_svc(db, db_post)
+    await create_hashtags_svc(db, db_post, post.hashtags)
 
     db.add(db_post)
     db.commit()

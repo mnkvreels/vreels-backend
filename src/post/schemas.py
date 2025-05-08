@@ -60,6 +60,8 @@ class PostCreate(BaseModel):
     media_type: Optional[str]
     thumbnail: Optional[str]
     video_length: Optional[int] = None
+    hashtags: Optional[List[str]] = []
+    comments_disabled: Optional[bool] = False
 
     class Config:
         orm_mode = True
@@ -86,6 +88,7 @@ class PostUpdate(BaseModel):
     category_of_content: Optional[str]
     views_count: Optional[int]
     media_type: Optional[str]
+    comments_disabled: Optional[bool]
 
 # Pyndantic model for saving a post (when user tries to save a post)
 class SavePostRequest(BaseModel):
