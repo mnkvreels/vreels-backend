@@ -53,6 +53,7 @@ class User(Base):
     location = Column(NVARCHAR(255))
     account_type = Column(Enum(AccountTypeEnum), default=AccountTypeEnum.PUBLIC, nullable=False)
     report_count = Column(Integer, default=0)
+    categories = relationship("UserCategory", back_populates="user")
     # One-to-Many relationships
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
@@ -128,3 +129,12 @@ class UserDeviceContact(Base):
     phone_number = Column(String(50), nullable=False)
 
     user_device = relationship("UserDevice", backref="device_contacts")
+    
+class UserCategory(Base):
+    __tablename__ = "user_categories"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    category_id = Column(Integer, ForeignKey("categories.id"))
+
+    user = relationship("User", back_populates="categories")
+    category = relationship("Category")

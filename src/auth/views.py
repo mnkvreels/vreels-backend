@@ -5,8 +5,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func ,literal_column, union_all
-from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow,BlockedUsers
-from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn
+from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow,BlockedUsers, UserCategory
+from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn, CategoryRequest, CategoryResponse
 from src.database import get_db
 from typing import List
 from datetime import timedelta, datetime, timezone
@@ -632,3 +632,28 @@ async def user_profile_setup(
         "user_id": updated_user.id,
         "user":user_update_data
     }
+    
+@router.post("/user/interests", status_code=200)
+async def set_user_interests(request: CategoryRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Clear existing
+    db.query(UserCategory).filter_by(user_id=current_user.id).delete()
+
+    # Add new
+    interests = [UserCategory(user_id=current_user.id, category_id=cid) for cid in request.category_ids]
+    db.add_all(interests)
+    db.commit()
+
+    return {"success": True, "message": "Interests updated"}
+
+@router.get("/user/interests", response_model=List[CategoryResponse])
+async def get_user_interests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user_categories = db.query(UserCategory).filter(UserCategory.user_id == current_user.id).all()
+
+    if not user_categories:
+        return []
+
+    categories = [uc.category for uc in user_categories]
+    return categories

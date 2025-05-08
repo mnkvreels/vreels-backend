@@ -12,7 +12,7 @@ from src.models.post import Like,Comment
 from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
-
+from fastapi.responses import RedirectResponse
 from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest
 from src.models.post import Post,post_likes
 
@@ -888,3 +888,36 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
         "message": f"Added likes, comments, and media interactions to {len(updated_posts)} posts.",
         "updated_post_ids": updated_posts
     }
+
+@router.get("/pix/search")
+async def search_pix(query: str, db: Session = Depends(get_db)):
+    pix_posts = db.query(Post).filter(
+        Post.media_type == "image",
+        Post.content.ilike(f"%{query}%")
+    ).all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": post.id,
+                "description": post.content,
+                "image_url": post.media,
+                "user": {"name": post.author.username},
+                "category": post.category_of_content,
+                "tags": [h.name for h in post.hashtags]
+            }
+            for post in pix_posts
+        ]
+    }
+
+@router.get("/pix/download/{post_id}")
+async def download_pix(post_id: int, db: Session = Depends(get_db)):
+    post = db.query(Post).filter_by(id=post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Pix not found")
+
+    if not post.media:
+        raise HTTPException(status_code=404, detail="Media URL not found")
+
+    return {"url": post.media}

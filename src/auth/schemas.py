@@ -78,6 +78,16 @@ class UserIdRequest(BaseModel):
     user_id: Optional[int]
     username: Optional[str]
     
+class CategoryRequest(BaseModel):
+    category_ids: List[int]
+
+class CategoryResponse(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        orm_mode = True
+    
 class DeviceTokenRequest(BaseModel):
     device_id: str
     device_token: str
