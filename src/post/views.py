@@ -852,8 +852,10 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
             if not existing:
                 db.execute(insert(post_likes).values(user_id=liker.id, post_id=post.id))
 
-            if post.media_type == "video":
+            if post.media_type and post.media_type.strip().lower() == "video":
+                print(f"Processing video post: {post.id}")
                 video_length = get_video_duration_from_url(post.media)
+                print(f"Video URL: {post.media}, Duration: {video_length}")
                 watched_time = int(video_length * 0.15)
                 media_type = "video"
             else:
