@@ -5,7 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func ,literal_column, union_all
-from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow
+from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow,BlockedUsers
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn
 from src.database import get_db
 from typing import List
@@ -82,13 +82,25 @@ async def profile(current_user: User = Depends(get_current_user), db: Session = 
         following_ids = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id).all()
         following_ids = [fid[0] for fid in following_ids]
 
+         # Subquery to get IDs of users who are blocked by or have blocked the current user
+        blocked_users_subq = (
+            db.query(BlockedUsers.blocked_id)
+            .filter(BlockedUsers.blocker_id == current_user.id)
+            .union(
+                db.query(BlockedUsers.blocker_id)
+                .filter(BlockedUsers.blocked_id == current_user.id)
+            )
+            .subquery()
+        )
+
         # Friends-of-Friends (second-degree) - return user_id
         second_degree_subq = (
             db.query(Follow.following_id.label("user_id"))
             .filter(
                 Follow.follower_id.in_(following_ids),
                 Follow.following_id != current_user.id,
-                ~Follow.following_id.in_(following_ids)
+                ~Follow.following_id.in_(following_ids),
+                ~Follow.following_id.in_(blocked_users_subq)
             )
         )
 

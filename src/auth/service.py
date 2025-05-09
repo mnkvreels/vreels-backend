@@ -1,4 +1,6 @@
 from os import stat
+from sqlalchemy import text
+import traceback
 from jwt import PyJWKClient
 import requests
 import json
@@ -11,9 +13,9 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import timedelta, datetime, timezone
 from src.database import get_db
-from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice, FollowRequest, UserDeviceContact
-from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction
-from ..models.report import ReportUser
+from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice, FollowRequest,UserDeviceContact
+from ..models.report import ReportUser, ReportPost, ReportComment,UserAppReport
+from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction,post_likes
 from ..models.activity import Activity
 from .schemas import UserCreate, UserUpdate
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
@@ -23,7 +25,6 @@ import bcrypt
 from ..config import Settings
 from ..notification_service import send_push_notification
 from azure.communication.sms import SmsClient, SmsSendResult
-from .schemas import UserIdRequest
 # Password hashing context using bcrypt
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -241,20 +242,14 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     db.refresh(db_user)  # Refresh the user instance to get updated data
     return db.query(User).filter(User.id == db_user.id).first()
 
-async def block_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
+async def block_user_svc(db, blocker_id, blocked_id):
     blocker = db.query(User).filter(User.id == blocker_id).first()
-
-    blocked = None
-    if request.user_id:
-        blocked = db.query(User).filter(User.id == request.user_id).first()
-    elif request.username:
-        blocked = db.query(User).filter(User.username == request.username).first()
-
+    blocked = db.query(User).filter(User.id == blocked_id).first()
+    
     if not blocker or not blocked:
-        raise ValueError("Invalid blocker or blocked user")
-
-    blocked_id = blocked.id
-
+        raise ValueError("Invalid blocker or blocked user ID")
+    
+    # Check if already blocked
     if db.query(BlockedUsers).filter_by(blocker_id=blocker_id, blocked_id=blocked_id).first():
         return False
 
@@ -279,29 +274,21 @@ async def block_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
     for f in follow:
         # Adjust follower/following counts
         if f.follower_id == blocker_id:
-            blocker.following_count = max(0, blocker.following_count - 1)
-            blocked.followers_count = max(0, blocked.followers_count - 1)
+            blocker.following_count -= 1
+            blocked.followers_count -= 1
         else:
-            blocked.following_count = max(0, blocked.following_count - 1)
-            blocker.followers_count = max(0, blocker.followers_count - 1)
+            blocked.following_count -= 1
+            blocker.followers_count -= 1
+        db.delete(f)
 
+    # Add the block
     db.add(BlockedUsers(blocker_id=blocker_id, blocked_id=blocked_id))
     db.commit()
     
     # Return True to indicate the user has been successfully blocked
     return True
 
-async def unblock_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
-    blocked = None
-    if request.user_id:
-        blocked = db.query(User).filter(User.id == request.user_id).first()
-    elif request.username:
-        blocked = db.query(User).filter(User.username == request.username).first()
-
-    if not blocked:
-        raise ValueError("Blocked user not found")
-
-    blocked_id = blocked.id
+async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
     existing_block = db.query(BlockedUsers).filter_by(
         blocker_id=blocker_id,
         blocked_id=blocked_id
@@ -433,90 +420,126 @@ async def authenticateUserID(db, user_id):
     # Querying the 'users' table to check if the phone number exists
     user = db.query(User).filter(User.id == user_id).first()
     return user
-import logging
-
-logger = logging.getLogger(__name__)
 
 async def delete_account_svc(db: Session, user_id: int) -> bool:
+
     try:
-        # Fetch the user
+        # 0. Fetch the user
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return False
 
-        # 1. Fetch post IDs authored by the user
-        post_ids = [post.id for post in db.query(Post.id).filter(Post.author_id == user_id).all()]
+        # Pre-fetch post and comment IDs for user
+        post_ids = [post.id for post in db.query(Post).filter(Post.author_id == user_id).all()]
+        comment_ids = [comment.id for comment in db.query(Comment).filter(Comment.user_id == user_id).all()]
 
+        # 1. Delete NSFW detections for user's posts (raw SQL because model is not in code)
         if post_ids:
-            # 2. Delete media interactions related to the user's posts
+           placeholders = ", ".join(str(pid) for pid in post_ids) 
+           sql = f"DELETE FROM nsfw_detection WHERE post_id IN ({placeholders})"
+           db.execute(text(sql))
+        # 2. Delete reports on user's posts
+        if post_ids:
+            db.query(ReportPost).filter(ReportPost.post_id.in_(post_ids)).delete(synchronize_session=False)
+
+        # 3. Delete user-to-user reports
+        db.query(ReportUser).filter(
+            (ReportUser.reported_by == user_id) | (ReportUser.user_id == user_id)
+        ).delete(synchronize_session=False)
+
+        # 4. Delete reports on user's comments
+        if comment_ids:
+            db.query(ReportComment).filter(ReportComment.comment_id.in_(comment_ids)).delete(synchronize_session=False)
+
+        # 5. Delete media interactions on user's posts
+        if post_ids:
             db.query(MediaInteraction).filter(MediaInteraction.post_id.in_(post_ids)).delete(synchronize_session=False)
 
-            # 3. Delete likes associated with the user's posts
-            db.query(Like).filter(Like.post_id.in_(post_ids)).delete(synchronize_session=False)
+        # 6. Delete likes on user's posts
+        db.query(Like).filter(Like.post.has(author_id=user_id)).delete(synchronize_session=False)
 
-            # 4. Delete comments associated with the user's posts
-            db.query(Comment).filter(Comment.post_id.in_(post_ids)).delete(synchronize_session=False)
+        # 7. Delete comments on user's posts
+        db.query(Comment).filter(Comment.post.has(author_id=user_id)).delete(synchronize_session=False)
 
-            # 5. Delete post hashtags associated with the user's posts
-            db.execute(post_hashtags.delete().where(post_hashtags.c.post_id.in_(post_ids)))
-
-            # 6. Delete the user's posts
-            db.query(Post).filter(Post.id.in_(post_ids)).delete(synchronize_session=False)
-
-        # 7. Delete likes made by the user
-        db.query(Like).filter(Like.user_id == user_id).delete(synchronize_session=False)
-
-        # 8. Delete comments authored by the user
+        # 8. Delete user's own comments
         db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
 
-        # 9. Delete saved and shared posts (sent and received)
+        # 9. Delete post hashtags
+        if post_ids:
+            db.execute(post_hashtags.delete().where(post_hashtags.c.post_id.in_(post_ids)))
+
+        # 10. Delete user's posts
+        db.query(Post).filter(Post.author_id == user_id).delete(synchronize_session=False)
+
+        # 11. Delete saved posts
         db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).delete(synchronize_session=False)
-        db.query(UserSharedPosts).filter(UserSharedPosts.sender_user_id == user_id).delete(synchronize_session=False)
-        db.query(UserSharedPosts).filter(UserSharedPosts.receiver_user_id == user_id).delete(synchronize_session=False)
 
-        # 10. Delete followers and following relationships
-        db.query(Follow).filter((Follow.follower_id == user_id) | (Follow.following_id == user_id)).delete(synchronize_session=False)
+        # 12. Delete shared posts (sent and received)
+        db.query(UserSharedPosts).filter(
+            (UserSharedPosts.sender_user_id == user_id) |
+            (UserSharedPosts.receiver_user_id == user_id)
+        ).delete(synchronize_session=False)
 
-        # 11. Delete blocked users (both directions)
-        db.query(BlockedUsers).filter((BlockedUsers.blocker_id == user_id) | (BlockedUsers.blocked_id == user_id)).delete(synchronize_session=False)
+        # 13. Delete follow relationships
+        db.query(Follow).filter(
+            (Follow.follower_id == user_id) | (Follow.following_id == user_id)
+        ).delete(synchronize_session=False)
 
-        # 12. Delete activity logs
-        db.query(Activity).filter(Activity.username == user.username).delete(synchronize_session=False)
-        db.query(Activity).filter(Activity.username_like == user.username).delete(synchronize_session=False)
-        db.query(Activity).filter(Activity.username_comment == user.username).delete(synchronize_session=False)
-        db.query(Activity).filter(Activity.followed_username == user.username).delete(synchronize_session=False)
+        # 14. Delete blocked users (both directions)
+        db.query(BlockedUsers).filter(
+            (BlockedUsers.blocker_id == user_id) | (BlockedUsers.blocked_id == user_id)
+        ).delete(synchronize_session=False)
 
-        # 13. Delete OTP entries
+        # 15. Delete activity logs
+        db.query(Activity).filter(
+            (Activity.username == user.username) |
+            (Activity.username_like == user.username) |
+            (Activity.username_comment == user.username) |
+            (Activity.followed_username == user.username)
+        ).delete(synchronize_session=False)
+
+        # 16. Delete OTP entries
         db.query(OTP).filter(OTP.user_id == user_id).delete(synchronize_session=False)
 
-        # 14. Delete reports where the user is the reporter
-        db.query(ReportUser).filter(ReportUser.reported_by == user_id).delete(synchronize_session=False)
+        # 17. Delete follow requests
+        db.query(FollowRequest).filter(
+            (FollowRequest.requester_id == user_id) | (FollowRequest.target_id == user_id)
+        ).delete(synchronize_session=False)
 
-        # 15. Delete reports where the user is the reported user
-        db.query(ReportUser).filter(ReportUser.user_id == user_id).delete(synchronize_session=False)
-        
-        #16. Delete follow requests associated with that user
-        db.query(FollowRequest).filter((FollowRequest.requester_id == user_id) | (FollowRequest.target_id == user_id)).delete(synchronize_session=False)
-        
-        #17. Delete all UserDeviceContact records associated with a specific user_id
+        # 18. Delete device contacts
         db.query(UserDeviceContact).filter(UserDeviceContact.user_device_id == user_id).delete(synchronize_session=False)
 
-        # 18. Finally, delete the user itself
+        # 19. Delete post likes (not covered earlier)
+        db.query(post_likes).filter(post_likes.c.user_id == user_id).delete(synchronize_session=False)
+
+        # 20. Delete bookmarks
+        db.execute(text("DELETE FROM bookmarks WHERE user_id = :user_id"),{"user_id": user_id})
+
+        # 21. Delete user recommendations
+        user_ids = [user_id]  # or however you build it
+        if user_ids:
+           placeholders = ", ".join(str(uid) for uid in user_ids)
+        db.execute(text(f"DELETE FROM bookmarks WHERE user_id IN ({placeholders})"))
+
+        # 22. Delete app-level user reports
+        db.query(UserAppReport).filter(UserAppReport.reporting_user_id == user_id).delete(synchronize_session=False)
+
+        # 23. Finally, delete the user record
         db.delete(user)
 
-        # Commit changes to the database
+        # Commit all deletions
         db.commit()
 
         return True
 
     except Exception as e:
-        db.rollback()  # Rollback if there's an error
-        logger.exception(f"Error deleting account for user_id {user_id}: {e}")
+        db.rollback()
+        print("❌ Account deletion failed due to:", e)
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while deleting the account: {str(e)}"
         )
-
 
 async def update_device_token_svc(user_id: int, device_id: str, device_token: str, platform: str, db: Session):
     try:
