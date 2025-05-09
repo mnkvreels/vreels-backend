@@ -1,6 +1,6 @@
 import os
 import re
-
+import io
 from io import BytesIO
 from random import choice,randint,uniform,sample
 from videolength import get_video_duration_from_url
@@ -12,9 +12,10 @@ from src.models.post import Like,Comment
 from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
-from fastapi.responses import RedirectResponse
+from fastapi.responses import StreamingResponse
 from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest
 from src.models.post import Post,post_likes
+from azure.storage.blob import BlobServiceClient
 
 from .service import (
     create_post_svc,
@@ -911,13 +912,42 @@ async def search_pix(query: str, db: Session = Depends(get_db)):
         ]
     }
 
+AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
+AZURE_IMAGE_CONTAINER = os.getenv("AZURE_IMAGE_CONTAINER", "images")
+AZURE_VIDEO_CONTAINER = os.getenv("AZURE_VIDEO_CONTAINER", "videos")
+CDN_BASE_URL = os.getenv("CDN_BASE_URL")
+
+# Initialize BlobServiceClient
+blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+
 @router.get("/pix/download/{post_id}")
 async def download_pix(post_id: int, db: Session = Depends(get_db)):
     post = db.query(Post).filter_by(id=post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Pix not found")
 
-    if not post.media:
-        raise HTTPException(status_code=404, detail="Media URL not found")
+    # Extract blob path from the full CDN/media URL
+    # E.g., https://cdn.domain.com/images/username/yyyy/mm/dd/file.jpg
+    # Then extract "images/username/yyyy/mm/dd/file.jpg"
+    blob_url = post.media
+    blob_path_parts = blob_url.split(".net/")[-1].split("/", 1)
+    if len(blob_path_parts) != 2:
+        raise HTTPException(status_code=400, detail="Invalid media URL format")
 
-    return {"url": post.media}
+    container_name, blob_name = blob_path_parts[0], blob_path_parts[1]
+
+    try:
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+        download_stream = blob_client.download_blob()
+        content = download_stream.readall()
+
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename={blob_name.split('/')[-1]}"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Could not retrieve media: {str(e)}")
