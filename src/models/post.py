@@ -25,7 +25,7 @@ class Like(Base):
     __tablename__ = "likes"
     
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.utcnow()) #Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     user_id = Column(Integer, ForeignKey("users.id"))
     post_id = Column(Integer, ForeignKey("posts.id"))
