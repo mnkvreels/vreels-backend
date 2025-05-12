@@ -1,12 +1,15 @@
 from sqlalchemy.orm import Session, joinedload, aliased
+import traceback
 from sqlalchemy.sql import case
+from sqlalchemy import text
 import re
 import math
 from typing import Union, Optional, List
 from sqlalchemy import desc, func, select
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
-from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes, MediaInteraction
+from ..models.report import ReportPost
 from ..models.user import User, Follow, FollowRequest, BlockedUsers
 from ..auth.schemas import User as UserSchema
 from ..models.post import VisibilityEnum
@@ -75,13 +78,17 @@ async def get_user_posts_svc(
     user_id: int,
     current_user: Optional[User],
     page: int,
-    limit: int
+    limit: int,
+    media_type: Optional[str] = None
 ) -> dict:
     # Calculate the offset for pagination
     offset = (page - 1) * limit
 
     # Base query: Fetch posts by the specified user
     posts_query = db.query(Post).filter(Post.author_id == user_id)
+
+    if media_type:
+      posts_query = posts_query.filter(Post.media_type == media_type)
 
     # Apply visibility filters
     if not current_user or current_user.id != user_id:
@@ -444,10 +451,70 @@ async def get_post_from_post_id_svc(db: Session, current_user: User, post_id: in
 
 # delete post svc
 async def delete_post_svc(db: Session, post_id: int):
-    post = db.query(Post).filter(Post.id == post_id).first()
-    db.delete(post)
-    db.commit()
+    try:
+        # 0. Fetch the post to ensure it exists
+        post = db.query(Post).filter(Post.id == post_id).first()
+        if not post:
+            return False  # Or raise HTTPException if post does not exist
 
+        # 1. Delete related entries in all dependent tables
+
+        # NSFW Detection (Raw SQL)
+        db.execute(
+            text("DELETE FROM nsfw_detection WHERE post_id = :post_id"),
+            {"post_id": post_id}
+        )
+
+        # User Shared Posts
+        db.query(UserSharedPosts).filter(UserSharedPosts.post_id == post_id).delete(synchronize_session=False)
+
+        # Media Interactions
+        db.query(MediaInteraction).filter(MediaInteraction.post_id == post_id).delete(synchronize_session=False)
+
+        # Comments on the Post
+        db.query(Comment).filter(Comment.post_id == post_id).delete(synchronize_session=False)
+
+        # Likes on the Post
+        db.query(Like).filter(Like.post_id == post_id).delete(synchronize_session=False)
+
+        # Post Hashtags (Raw SQL since it's a many-to-many association table)
+        db.execute(
+            post_hashtags.delete().where(post_hashtags.c.post_id == post_id)
+        )
+
+        # Post Likes (Raw SQL assuming no ORM model)
+        db.execute(
+            text("DELETE FROM post_likes WHERE post_id = :post_id"),
+            {"post_id": post_id}
+        )
+
+        # Saved Posts (Note: Column is `saved_post_id` in this case)
+        db.query(UserSavedPosts).filter(UserSavedPosts.saved_post_id == post_id).delete(synchronize_session=False)
+
+        # Bookmarks (Raw SQL if no model)
+        db.execute(
+            text("DELETE FROM bookmarks WHERE post_id = :post_id"),
+            {"post_id": post_id}
+        )
+
+        # Reports on the Post
+        db.query(ReportPost).filter(ReportPost.post_id == post_id).delete(synchronize_session=False)
+
+        # 2. Finally, delete the Post itself
+        db.delete(post)
+
+        # 3. Commit all deletions
+        db.commit()
+        return True
+
+    except Exception as e:
+        db.rollback()
+        print("❌ Post deletion failed due to:", e)
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while deleting the post: {str(e)}"
+        )
 
 # like post
 async def like_post_svc(db: Session, post_id: int, username: str):
@@ -807,6 +874,7 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             Post.media_type,
             Post.share_count,
             Post.visibility,
+            Post.comments_disabled,
             User.username,
         )
         .join(Post, UserSavedPosts.saved_post_id == Post.id)
@@ -827,6 +895,7 @@ async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
             {**{k if k != "post_id" else "id": v for k, v in row._mapping.items()},
             "is_liked": row.post_id in liked_post_ids,
             "is_saved": row.post_id in saved_post_ids,
+            "comments_disabled": row.comments_disabled
     }
                   for row in saved_posts],
     }
@@ -1044,6 +1113,7 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         .join(Follow, Follow.following_id == Post.author_id)
         .filter(Follow.follower_id == user_id)
         .filter((Post.visibility != "private") | (Post.author_id == user_id))  # Exclude private unless it's the user's post
+        .filter(Post.media_type == "video")
         .count()
     )
 
@@ -1063,6 +1133,7 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         .join(Follow, Follow.following_id == Post.author_id)
         .filter(Follow.follower_id == user_id)
         .filter((Post.visibility != "private") | (Post.author_id == user_id))  # Exclude private unless it's the user's post
+        .filter(Post.media_type == "video")
         .order_by(desc(Post.created_at))
         .offset(offset)
         .limit(limit)
@@ -1089,20 +1160,29 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         "data": result,
     }  
 
-async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
+async def search_hashtags_svc(query: str, db: Session, page: int, limit: int, source: Optional[str] = None):
     offset = (page - 1) * limit
 
-    total_matching_hashtags = (
+    # Build the base query for counting
+    base_query = (
         db.query(func.count(func.distinct(Hashtag.id)))
         .join(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)
         .join(Post, Post.id == post_hashtags.c.post_id)
         .filter(Hashtag.name.ilike(f"%{query}%"))
         .filter(Post.visibility == VisibilityEnum.public)
-        .scalar()
     )
+
+    # ✅ Apply media_type filtering if source is provided
+    if source == "pix":
+        base_query = base_query.filter(Post.media_type == "image")
+    elif source == "reels":
+        base_query = base_query.filter(Post.media_type == "video")
+
+    total_matching_hashtags = base_query.scalar()
     total_pages = math.ceil(total_matching_hashtags / limit) if total_matching_hashtags > 0 else 0 
-    
-    hashtags = (
+
+    # Build the main hashtags query
+    hashtags_query = (
         db.query(
             Hashtag.name,
             func.count(post_hashtags.c.post_id).label("post_count")
@@ -1111,6 +1191,16 @@ async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
         .join(Post, Post.id == post_hashtags.c.post_id)
         .filter(Hashtag.name.ilike(f"%{query}%"))
         .filter(Post.visibility == VisibilityEnum.public)
+    )
+
+    # ✅ Apply media_type filtering to the main query as well
+    if source == "pix":
+        hashtags_query = hashtags_query.filter(Post.media_type == "image")
+    elif source == "reels":
+        hashtags_query = hashtags_query.filter(Post.media_type == "video")
+
+    hashtags = (
+        hashtags_query
         .group_by(Hashtag.name)
         .order_by(func.count(post_hashtags.c.post_id).desc())
         .limit(limit)
@@ -1123,12 +1213,13 @@ async def search_hashtags_svc(query: str, db: Session, page: int, limit: int):
             "total_items": total_matching_hashtags,
             "total_pages": total_pages,
             "current_page": page,
-            "limit": limit                  
-            },
+            "limit": limit
+        },
         "items": [
             {"hashtag": hashtag.name, "post_count": hashtag.post_count} for hashtag in hashtags
         ]
     }
+
 
 ''' 
 async def search_users_svc(query: str, db: Session, current_user: User, page: int, limit: int):
@@ -1356,3 +1447,22 @@ async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: 
         "total_pages": (total_count + limit - 1) // limit,
         "data": result,
     }
+
+async def delete_all_comments_and_toggle_disable(
+    db: Session, post_id: int, user_id: int, disable_comments: bool
+):
+    post = db.query(Post).filter(Post.id == post_id, Post.author_id == user_id).first()
+    if not post:
+        raise Exception("Post not found or you're not the owner")
+    
+    # Delete all comments for this post
+    db.query(Comment).filter(Comment.post_id == post_id).delete()
+
+    db.flush()
+    post.comments_count = db.query(Comment). filter(Comment.post_id == post_id).count()
+
+    # Dynamically enable/disable comments based on input
+    post.comments_disabled = 1 if disable_comments else 0
+
+    db.commit()
+    return True
