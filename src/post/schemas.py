@@ -130,3 +130,7 @@ class SeedPexelsRequest(BaseModel):
     count: int = 5
     include_images: bool = True
     include_videos: bool = True
+
+class DeleteAllCommentsRequest(BaseModel):
+    post_id: int
+    disable_comments: bool = False  # Optional, defaults to False if not provided

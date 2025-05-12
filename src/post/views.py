@@ -1,11 +1,14 @@
 import os
 import re
 
+import tempfile
+import shutil 
+
 from io import BytesIO
 from random import choice,randint,uniform,sample
 from videolength import get_video_duration_from_url
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func,select,insert
 from src.models.post import Like,Comment
@@ -13,7 +16,7 @@ from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
 
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest
 from src.models.post import Post,post_likes
 
 from .service import (
@@ -45,7 +48,8 @@ from .service import (
     search_hashtags_svc,
     search_users_svc,
     get_user_liked_posts_svc,
-    delete_comments_svc
+    delete_comments_svc,
+    delete_all_comments_and_toggle_disable
 
 )
 from ..profile.service import get_followers_svc
@@ -56,7 +60,7 @@ from ..models.post import VisibilityEnum, MediaInteraction
 from ..auth.enums import AccountTypeEnum
 from ..models.user import UserDevice, User, Follow
 from ..notification_service import send_push_notification
-
+from ..category_predictor import predict_category
 
 import httpx
 from tempfile import NamedTemporaryFile
@@ -103,6 +107,13 @@ async def create_post(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
+
+    # Save the file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.filename.split('.')[-1]}") as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        temp_file_path = tmp.name
+
+
     file_url = None
     if file:
         try:
@@ -110,13 +121,19 @@ async def create_post(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+        # Predict category
+        try:
+            content_category = predict_category(temp_file_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Category prediction failed: {str(e)}")
+
     hashtags_list = [tag.strip() for tag in hashtags.split(",")] if hashtags else []
     
     post = PostCreate(
         content=content,
         location=location,
         visibility=visibility,
-        category_of_content=category_of_content,
+        category_of_content=content_category,
         media_type=media_type,
         thumbnail=thumbnail_url,
         video_length=0 if media_type == "image" else video_length,
@@ -165,7 +182,12 @@ async def edit_post(
     return post
 
 @router.get("/user")
-async def get_current_user_posts(page: int, limit: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_current_user_posts(
+    page: int, 
+    limit: int,
+    media_type: Optional[str] = Query(None, description="Filter by media type (e.g., video, image)"), 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)):
     # verify the token
     user = current_user
     if not user:
@@ -173,7 +195,7 @@ async def get_current_user_posts(page: int, limit: int, db: Session = Depends(ge
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found."
         )
-    posts = await get_user_posts_svc(db, user.id, current_user, page, limit)
+    posts = await get_user_posts_svc(db, user.id, current_user, page, limit, media_type)
     return posts
 
 
@@ -890,3 +912,64 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
         "message": f"Added likes, comments, and media interactions to {len(updated_posts)} posts.",
         "updated_post_ids": updated_posts
     }
+
+@router.get("/pix/search")
+async def search_pix(query: str, db: Session = Depends(get_db)):
+    pix_posts = db.query(Post).filter(
+        Post.media_type == "image",
+        Post.content.ilike(f"%{query}%")
+    ).all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": post.id,
+                "description": post.content,
+                "image_url": post.media,
+                "user": {"name": post.author.username},
+                "category": post.category_of_content,
+                "tags": [h.name for h in post.hashtags]
+            }
+            for post in pix_posts
+        ]
+    }
+
+@router.get("/pix/download/{post_id}")
+async def download_pix(post_id: int, db: Session = Depends(get_db)):
+    post = db.query(Post).filter_by(id=post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Pix not found")
+
+    if not post.media:
+        raise HTTPException(status_code=404, detail="Media URL not found")
+
+    return {"url": post.media}
+
+
+@router.delete("/delete-all-comments", status_code=status.HTTP_200_OK)
+async def delete_all_comments(
+    request: DeleteAllCommentsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user = current_user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized access.",
+        )
+
+    try:
+        await delete_all_comments_and_toggle_disable(
+            db, request.post_id, user.id, request.disable_comments
+        )
+        action_msg = " and commenting disabled" if request.disable_comments else ""
+        return {"message": f"All comments deleted{action_msg} for this post."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
