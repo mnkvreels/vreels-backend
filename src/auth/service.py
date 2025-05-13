@@ -310,13 +310,15 @@ async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
     db.commit()
     return True
 
+'''
+
 async def get_blocked_users_svc(db: Session, user_id: int):
     blocked_users = db.query(User).join(BlockedUsers, User.id == BlockedUsers.blocked_id).filter(
         BlockedUsers.blocker_id == user_id
     ).all()
 
     return blocked_users
-'''
+
 
 async def unblock_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
     # Resolve target user (blocked user)
@@ -372,14 +374,25 @@ async def send_notification_to_user(db: Session, user_id: int, title: str, messa
                 print(f"Missing device_token/platform for device_id {device.device_id}")
 
 # OTP Generation function
+'''
 async def generate_otp(otp_length=6):
     base_number = 10 ** (otp_length - 1)
     number = random.randint(base_number, base_number * 10 - 1)
     return str(number)
 
+'''
+async def generate_otp(otp_length=6):
+    #preprod—
+    # base_number = 10 ** (otp_length - 1)
+    # number = random.randint(base_number, base_number * 10 - 1)
+    # return str(number)
+    #dev–
+    return "123456"
+
 # Send SMS function using the SMS API (SMSCountry in this case)
 async def send_sms(mobile, otp):
-    if str(mobile).startswith("91"):
+    #if str(mobile).startswith("91"):
+    if check_country_code(mobile):
         url = "https://restapi.smscountry.com/v0.1/Accounts/mQWTheACJyLM60UPeREV/SMSes/"
         headers = {
             'Authorization': 'Basic bVFXVGhlQUNKeUxNNjBVUGVSRVY6SUxhc2FZc0hXcVVVSklvSHBWbXNkYkNPNjFrMVBvdDQyeWNjbmRDWQ==',

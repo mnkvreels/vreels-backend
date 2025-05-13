@@ -60,7 +60,7 @@ from ..models.post import VisibilityEnum, MediaInteraction
 from ..auth.enums import AccountTypeEnum
 from ..models.user import UserDevice, User, Follow
 from ..notification_service import send_push_notification
-from ..category_predictor import predict_category
+#from ..category_predictor import predict_category
 
 import httpx
 from tempfile import NamedTemporaryFile
@@ -107,13 +107,6 @@ async def create_post(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-
-    # Save the file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.filename.split('.')[-1]}") as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        temp_file_path = tmp.name
-
-
     file_url = None
     if file:
         try:
@@ -121,19 +114,13 @@ async def create_post(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-        # Predict category
-        try:
-            content_category = predict_category(temp_file_path)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Category prediction failed: {str(e)}")
-
     hashtags_list = [tag.strip() for tag in hashtags.split(",")] if hashtags else []
     
     post = PostCreate(
         content=content,
         location=location,
         visibility=visibility,
-        category_of_content=content_category,
+        category_of_content=category_of_content,
         media_type=media_type,
         thumbnail=thumbnail_url,
         video_length=0 if media_type == "image" else video_length,
@@ -143,25 +130,8 @@ async def create_post(
     # Create the post with the file URL (if any)
     return await create_post_svc(db, post, current_user.id, file_url)
 
-    # Fetch followers of the user
-    # followers = await get_followers_svc(db, current_user.id)
 
-    # Send notifications to followers
-    # for follow in followers:
-    #     # follower_username = follow['username']
-    #     follower_user = await get_user_by_username(db, follow.username)
-
-    #     # Send push notification
-    #     try:
-    #         await send_notification_to_user(
-    #         db, 
-    #         user_id: follower_user.id
-    #         title=f"New Post from {current_user.username}",
-    #         message=f"{current_user.username} has posted a new update! Check it out!"
-    #     )
-    #     except Exception as e:
-    #         # Log the error but don't raise it to ensure the post share is still processed
-    #         print(f"Failed to send notification: {str(e)}")
+ 
 
 @router.patch("/edit/{post_id}", status_code=status.HTTP_200_OK)
 async def edit_post(
@@ -971,5 +941,4 @@ async def delete_all_comments(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
 

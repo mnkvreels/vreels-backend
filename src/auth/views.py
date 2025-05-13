@@ -492,7 +492,11 @@ async def app_login(user: UserUpdate, db: Session = Depends(get_db)):
     if db_user:
         # If user exists, generate OTP for the existing user and send it
         otp_value = await otp_function(db, db_user.id, user.phone_number)
-        sms_status = await send_sms(user.phone_number, otp_value)
+        #sms_status = await send_sms(user.phone_number, otp_value)
+        #preprod---
+        # sms_status = await send_sms(user.phone_number, otp_value)
+        #dev-----
+        sms_status = True
 
         if sms_status:
             return {"message": "OTP sent successfully", "user_id": db_user.id}
@@ -510,7 +514,11 @@ async def app_login(user: UserUpdate, db: Session = Depends(get_db)):
 
         # Generate OTP and send SMS
         otp_value = await otp_function(db, new_user.id, user.phone_number)
-        sms_status = await send_sms(user.phone_number, otp_value)
+        #sms_status = await send_sms(user.phone_number, otp_value)
+        # preprod---
+        # sms_status = await send_sms(user.phone_number, otp_value)
+        # dev-----
+        sms_status = True
 
         if sms_status:
             return {"message": "OTP sent successfully", "user_id": new_user.id}
