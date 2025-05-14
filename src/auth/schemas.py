@@ -78,8 +78,12 @@ class UserIdRequest(BaseModel):
     user_id: Optional[int]
     username: Optional[str]
     
+class CategoryItem(BaseModel):
+    category_id: int
+    selected: bool
+
 class CategoryRequest(BaseModel):
-    category_ids: List[int]
+    category_ids: List[CategoryItem]
 
 class CategoryResponse(BaseModel):
     id: int

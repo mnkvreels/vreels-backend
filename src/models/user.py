@@ -135,6 +135,7 @@ class UserCategory(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))
+    selected = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="categories")
     category = relationship("Category")

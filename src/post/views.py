@@ -14,7 +14,7 @@ from datetime import *
 from ..database import get_db
 from fastapi.responses import StreamingResponse
 from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest
-from src.models.post import Post,post_likes
+from src.models.post import Post,post_likes, Category
 from azure.storage.blob import BlobServiceClient
 
 from .service import (
@@ -891,13 +891,27 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
     }
 
 @router.get("/pix/search")
-async def search_pix(query: str, db: Session = Depends(get_db)):
+async def search_pix(
+    query: str,
+    page: int,
+    limit: int,
+    db: Session = Depends(get_db)
+):
+    offset = (page - 1) * limit
+    
     pix_posts = db.query(Post).filter(
-        Post.media_type == "image",
+        # Post.media_type == "image",
         Post.content.ilike(f"%{query}%")
-    ).all()
-
+    )
+    
+    posts = pix_posts.order_by(Post.created_at.desc()).offset(offset).limit(limit).all()
+    total_count = pix_posts.count()
+    
     return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
         "success": True,
         "data": [
             {
@@ -908,10 +922,52 @@ async def search_pix(query: str, db: Session = Depends(get_db)):
                 "category": post.category_of_content,
                 "tags": [h.name for h in post.hashtags]
             }
-            for post in pix_posts
+            for post in posts
         ]
     }
 
+@router.get("/pix/category/{category_id}")
+async def get_pix_by_category(
+    category_id: int,
+    page: int,
+    limit: int,
+    db: Session = Depends(get_db)
+):
+    offset = (page - 1) * limit
+
+    # Get the category name for matching
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    # Filter by category name
+    posts_query = db.query(Post).filter(
+        # Post.media_type == "image",
+        Post.category_of_content == category.name
+    )
+
+    total_count = posts_query.count()
+    posts = posts_query.order_by(Post.created_at.desc()).offset(offset).limit(limit).all()
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "success": True,
+        "data": [
+            {
+                "id": post.id,
+                "description": post.content,
+                "image_url": post.media,
+                "user": {"name": post.author},
+                "tags": [h.name for h in post.hashtags]
+            }
+            for post in posts
+        ]
+    }
+
+    
 AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
 AZURE_IMAGE_CONTAINER = os.getenv("AZURE_IMAGE_CONTAINER", "images")
 AZURE_VIDEO_CONTAINER = os.getenv("AZURE_VIDEO_CONTAINER", "videos")
