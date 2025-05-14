@@ -1,9 +1,8 @@
 import os
 import re
-
+import io
 import tempfile
 import shutil 
-
 from io import BytesIO
 from random import choice,randint,uniform,sample
 from videolength import get_video_duration_from_url
@@ -15,9 +14,11 @@ from src.models.post import Like,Comment
 from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
-
+from fastapi.responses import StreamingResponse
 from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest
-from src.models.post import Post,post_likes
+from src.models.post import Post,post_likes, Category
+from azure.storage.blob import BlobServiceClient
+
 
 from .service import (
     create_post_svc,
@@ -219,13 +220,13 @@ async def unsave_post(request: SavePostRequest, db: Session = Depends(get_db), c
     return await unsave_post_svc(db, current_user.id, request.post_id)
 
 @router.get("/savedposts", status_code=status.HTTP_200_OK)
-async def get_saved_posts(page: int, limit: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def get_saved_posts(page: int, limit: int,source: Optional[str] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     user = current_user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-    saved_posts = await get_saved_posts_svc(db, user.id, page, limit)
+    saved_posts = await get_saved_posts_svc(db, user.id, page, limit, source)
     return saved_posts
 
 @router.post("/sharepost")
@@ -461,8 +462,8 @@ async def get_comments_for_post(
 
 # Get public posts
 @router.get("/public", status_code=status.HTTP_200_OK)
-async def get_public_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_public_posts_svc(db, current_user, page, limit)
+async def get_public_posts(page: int, limit: int,source: Optional[str] = None,db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_public_posts_svc(db, current_user, page, limit,source)
     if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No public posts found."
@@ -471,8 +472,8 @@ async def get_public_posts(page: int, limit: int, db: Session = Depends(get_db),
 
 # Get private posts (only visible to uuser)
 @router.get("/private", status_code=status.HTTP_200_OK)
-async def get_private_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_private_posts_svc(db, current_user, page, limit)
+async def get_private_posts(page: int, limit: int,source: Optional[str] =None, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_private_posts_svc(db, current_user, page, limit,source)
     if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No private posts found."
@@ -523,6 +524,7 @@ async def search_users(page: int ,limit: int, query: str, db: Session = Depends(
 async def get_current_user_liked_posts(
     page: int,
     limit: int,
+    source: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -533,7 +535,7 @@ async def get_current_user_liked_posts(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized."
         )
-    posts = await get_user_liked_posts_svc(db, user.id, page, limit)
+    posts = await get_user_liked_posts_svc(db, user.id, page, limit,source)
     return posts
 
 @router.post("/log-media-interactions")
@@ -884,13 +886,27 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
     }
 
 @router.get("/pix/search")
-async def search_pix(query: str, db: Session = Depends(get_db)):
+async def search_pix(
+    query: str,
+    page: int,
+    limit: int,
+    db: Session = Depends(get_db)
+):
+    offset = (page - 1) * limit
+    
     pix_posts = db.query(Post).filter(
-        Post.media_type == "image",
+        # Post.media_type == "image",
         Post.content.ilike(f"%{query}%")
-    ).all()
-
+    )
+    
+    posts = pix_posts.order_by(Post.created_at.desc()).offset(offset).limit(limit).all()
+    total_count = pix_posts.count()
+    
     return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
         "success": True,
         "data": [
             {
@@ -901,9 +917,60 @@ async def search_pix(query: str, db: Session = Depends(get_db)):
                 "category": post.category_of_content,
                 "tags": [h.name for h in post.hashtags]
             }
-            for post in pix_posts
+            for post in posts
         ]
     }
+
+@router.get("/pix/category/{category_id}")
+async def get_pix_by_category(
+    category_id: int,
+    page: int,
+    limit: int,
+    db: Session = Depends(get_db)
+):
+    offset = (page - 1) * limit
+
+    # Get the category name for matching
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    # Filter by category name
+    posts_query = db.query(Post).filter(
+        # Post.media_type == "image",
+        Post.category_of_content == category.name
+    )
+
+    total_count = posts_query.count()
+    posts = posts_query.order_by(Post.created_at.desc()).offset(offset).limit(limit).all()
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "success": True,
+        "data": [
+            {
+                "id": post.id,
+                "description": post.content,
+                "image_url": post.media,
+                "user": {"name": post.author},
+                "tags": [h.name for h in post.hashtags]
+            }
+            for post in posts
+        ]
+    }
+
+    
+AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
+AZURE_IMAGE_CONTAINER = os.getenv("AZURE_IMAGE_CONTAINER", "images")
+AZURE_VIDEO_CONTAINER = os.getenv("AZURE_VIDEO_CONTAINER", "videos")
+CDN_BASE_URL = os.getenv("CDN_BASE_URL")
+
+# Initialize BlobServiceClient
+blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+
 
 @router.get("/pix/download/{post_id}")
 async def download_pix(post_id: int, db: Session = Depends(get_db)):
@@ -911,10 +978,32 @@ async def download_pix(post_id: int, db: Session = Depends(get_db)):
     if not post:
         raise HTTPException(status_code=404, detail="Pix not found")
 
-    if not post.media:
-        raise HTTPException(status_code=404, detail="Media URL not found")
+    # Extract blob path from the full CDN/media URL
+    # E.g., https://cdn.domain.com/images/username/yyyy/mm/dd/file.jpg
+    # Then extract "images/username/yyyy/mm/dd/file.jpg"
+    blob_url = post.media
+    blob_path_parts = blob_url.split(".net/")[-1].split("/", 1)
+    if len(blob_path_parts) != 2:
+        raise HTTPException(status_code=400, detail="Invalid media URL format")
 
-    return {"url": post.media}
+    container_name, blob_name = blob_path_parts[0], blob_path_parts[1]
+
+    try:
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+        download_stream = blob_client.download_blob()
+        content = download_stream.readall()
+
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename={blob_name.split('/')[-1]}"
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Could not retrieve media: {str(e)}")
+
 
 
 @router.delete("/delete-all-comments", status_code=status.HTTP_200_OK)
@@ -941,4 +1030,5 @@ async def delete_all_comments(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
 

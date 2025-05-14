@@ -5,9 +5,10 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func ,literal_column, union_all
-from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow,BlockedUsers
-from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn
+from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow,BlockedUsers, UserCategory
+from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn, CategoryRequest, CategoryResponse
 from src.database import get_db
+from src.models.post import Post
 from typing import List
 from datetime import timedelta, datetime, timezone
 from .enums import AccountTypeEnum, GenderEnum
@@ -640,3 +641,47 @@ async def user_profile_setup(
         "user_id": updated_user.id,
         "user":user_update_data
     }
+    
+@router.post("/user/interests", status_code=200)
+async def set_user_interests(
+    request: CategoryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db.query(UserCategory).filter_by(user_id=current_user.id).delete()
+
+    interests = [
+        UserCategory(user_id=current_user.id, category_id=item.category_id, selected=item.selected)
+        for item in request.category_ids
+    ]
+    db.add_all(interests)
+    db.commit()
+    return {"success": True, "message": "Interests updated"}
+
+@router.get("/user/interests", response_model=List[dict])
+async def get_user_interests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user_categories = db.query(UserCategory).filter(
+        UserCategory.user_id == current_user.id,
+        UserCategory.selected == True
+    ).all()
+
+    response = []
+
+    for uc in user_categories:
+        category_name = uc.category.name
+
+        sample_image = db.query(Post).filter(
+            # Post.media_type == "image",
+            Post.category_of_content == category_name  # Match by name
+        ).order_by(Post.created_at.desc()).first()
+
+        response.append({
+            "category_id": uc.category_id,
+            "category_name": category_name,
+            "sample_image": sample_image.media if sample_image else None
+        })
+
+    return response
