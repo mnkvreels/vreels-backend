@@ -44,7 +44,7 @@ msrest==0.7.1
 mssql-django==1.5
 multidict==6.1.0
 oauthlib==3.2.2
-opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86
 packaging==24.2
 passlib==1.7.4
 pillow==10.4.0
