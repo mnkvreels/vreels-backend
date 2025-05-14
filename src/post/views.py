@@ -61,12 +61,8 @@ from ..models.post import VisibilityEnum, MediaInteraction
 from ..auth.enums import AccountTypeEnum
 from ..models.user import UserDevice, User, Follow
 from ..notification_service import send_push_notification
-<<<<<<< Updated upstream
-#from ..category_predictor import predict_category
-=======
 from pathlib import Path
 from ..category import predict_category_image, predict_category_video
->>>>>>> Stashed changes
 
 import httpx
 from tempfile import NamedTemporaryFile
