@@ -30,3 +30,5 @@ staticfiles/
 *.pyc       # Ignore all Python bytecode files
 node_modules/  # Ignore node_modules directory
 *.whl       # Ignore wheel files
+*.bin
+*.msgpack
