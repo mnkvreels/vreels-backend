@@ -17,7 +17,7 @@ from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice, FollowReq
 from ..models.report import ReportUser, ReportPost, ReportComment,UserAppReport
 from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction,post_likes
 from ..models.activity import Activity
-from .schemas import UserCreate, UserUpdate
+from .schemas import UserCreate, UserUpdate, UserIdRequest
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
 import random
 import string
@@ -242,12 +242,20 @@ async def update_user(db: Session, db_user: User, user_update: UserUpdate):
     db.refresh(db_user)  # Refresh the user instance to get updated data
     return db.query(User).filter(User.id == db_user.id).first()
 
-async def block_user_svc(db, blocker_id, blocked_id):
+async def block_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
     blocker = db.query(User).filter(User.id == blocker_id).first()
-    blocked = db.query(User).filter(User.id == blocked_id).first()
+    #blocked = db.query(User).filter(User.id == blocked_id).first()
+    if request.user_id:
+        blocked = db.query(User).filter(User.id == request.user_id).first()
+    elif request.username:
+        blocked = db.query(User).filter(User.username == request.username).first()
+    else:
+        raise HTTPException(status_code=400, detail="Either user_id or username must be provided.")
     
     if not blocker or not blocked:
         raise ValueError("Invalid blocker or blocked user ID")
+
+    blocked_id = blocked.id
     
     # Check if already blocked
     if db.query(BlockedUsers).filter_by(blocker_id=blocker_id, blocked_id=blocked_id).first():
@@ -288,6 +296,7 @@ async def block_user_svc(db, blocker_id, blocked_id):
     # Return True to indicate the user has been successfully blocked
     return True
 
+'''
 async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
     existing_block = db.query(BlockedUsers).filter_by(
         blocker_id=blocker_id,
@@ -301,12 +310,40 @@ async def unblock_user_svc(db: Session, blocker_id: int, blocked_id: int):
     db.commit()
     return True
 
+'''
+
 async def get_blocked_users_svc(db: Session, user_id: int):
     blocked_users = db.query(User).join(BlockedUsers, User.id == BlockedUsers.blocked_id).filter(
         BlockedUsers.blocker_id == user_id
     ).all()
 
     return blocked_users
+
+
+async def unblock_user_svc(db: Session, blocker_id: int, request: UserIdRequest):
+    # Resolve target user (blocked user)
+    if request.user_id:
+        blocked_user = db.query(User).filter(User.id == request.user_id).first()
+    elif request.username:
+        blocked_user = db.query(User).filter(User.username == request.username).first()
+    else:
+        raise HTTPException(status_code=400, detail="Either user_id or username must be provided.")
+
+    if not blocked_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    # Check and delete existing block
+    existing_block = db.query(BlockedUsers).filter_by(
+        blocker_id=blocker_id,
+        blocked_id=blocked_user.id
+    ).first()
+
+    if not existing_block:
+        return False  # Not currently blocked
+
+    db.delete(existing_block)
+    db.commit()
+    return True
 
 async def send_notification_to_user(db: Session, user_id: int, title: str, message: str):
     # Fetch the user and the associated device data
@@ -337,14 +374,25 @@ async def send_notification_to_user(db: Session, user_id: int, title: str, messa
                 print(f"Missing device_token/platform for device_id {device.device_id}")
 
 # OTP Generation function
+'''
 async def generate_otp(otp_length=6):
     base_number = 10 ** (otp_length - 1)
     number = random.randint(base_number, base_number * 10 - 1)
     return str(number)
 
+'''
+async def generate_otp(otp_length=6):
+    #preprod—
+    # base_number = 10 ** (otp_length - 1)
+    # number = random.randint(base_number, base_number * 10 - 1)
+    # return str(number)
+    #dev–
+    return "123456"
+
 # Send SMS function using the SMS API (SMSCountry in this case)
 async def send_sms(mobile, otp):
-    if str(mobile).startswith("91"):
+    #if str(mobile).startswith("91"):
+    if check_country_code(mobile):
         url = "https://restapi.smscountry.com/v0.1/Accounts/mQWTheACJyLM60UPeREV/SMSes/"
         headers = {
             'Authorization': 'Basic bVFXVGhlQUNKeUxNNjBVUGVSRVY6SUxhc2FZc0hXcVVVSklvSHBWbXNkYkNPNjFrMVBvdDQyeWNjbmRDWQ==',

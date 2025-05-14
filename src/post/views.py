@@ -1,11 +1,13 @@
 import os
 import re
 import io
+import tempfile
+import shutil 
 from io import BytesIO
 from random import choice,randint,uniform,sample
 from videolength import get_video_duration_from_url
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func,select,insert
 from src.models.post import Like,Comment
@@ -13,9 +15,10 @@ from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
 from fastapi.responses import StreamingResponse
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest
 from src.models.post import Post,post_likes, Category
 from azure.storage.blob import BlobServiceClient
+
 
 from .service import (
     create_post_svc,
@@ -46,7 +49,8 @@ from .service import (
     search_hashtags_svc,
     search_users_svc,
     get_user_liked_posts_svc,
-    delete_comments_svc
+    delete_comments_svc,
+    delete_all_comments_and_toggle_disable
 
 )
 from ..profile.service import get_followers_svc
@@ -57,7 +61,7 @@ from ..models.post import VisibilityEnum, MediaInteraction
 from ..auth.enums import AccountTypeEnum
 from ..models.user import UserDevice, User, Follow
 from ..notification_service import send_push_notification
-
+#from ..category_predictor import predict_category
 
 import httpx
 from tempfile import NamedTemporaryFile
@@ -127,25 +131,8 @@ async def create_post(
     # Create the post with the file URL (if any)
     return await create_post_svc(db, post, current_user.id, file_url)
 
-    # Fetch followers of the user
-    # followers = await get_followers_svc(db, current_user.id)
 
-    # Send notifications to followers
-    # for follow in followers:
-    #     # follower_username = follow['username']
-    #     follower_user = await get_user_by_username(db, follow.username)
-
-    #     # Send push notification
-    #     try:
-    #         await send_notification_to_user(
-    #         db, 
-    #         user_id: follower_user.id
-    #         title=f"New Post from {current_user.username}",
-    #         message=f"{current_user.username} has posted a new update! Check it out!"
-    #     )
-    #     except Exception as e:
-    #         # Log the error but don't raise it to ensure the post share is still processed
-    #         print(f"Failed to send notification: {str(e)}")
+ 
 
 @router.patch("/edit/{post_id}", status_code=status.HTTP_200_OK)
 async def edit_post(
@@ -166,7 +153,12 @@ async def edit_post(
     return post
 
 @router.get("/user")
-async def get_current_user_posts(page: int, limit: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_current_user_posts(
+    page: int, 
+    limit: int,
+    media_type: Optional[str] = Query(None, description="Filter by media type (e.g., video, image)"), 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)):
     # verify the token
     user = current_user
     if not user:
@@ -174,7 +166,7 @@ async def get_current_user_posts(page: int, limit: int, db: Session = Depends(ge
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found."
         )
-    posts = await get_user_posts_svc(db, user.id, current_user, page, limit)
+    posts = await get_user_posts_svc(db, user.id, current_user, page, limit, media_type)
     return posts
 
 
@@ -854,8 +846,10 @@ def auto_like_and_comment_on_random_posts(db: Session = Depends(get_db)):
             if not existing:
                 db.execute(insert(post_likes).values(user_id=liker.id, post_id=post.id))
 
-            if post.media_type == "video":
+            if post.media_type and post.media_type.strip().lower() == "video":
+                print(f"Processing video post: {post.id}")
                 video_length = get_video_duration_from_url(post.media)
+                print(f"Video URL: {post.media}, Duration: {video_length}")
                 watched_time = int(video_length * 0.15)
                 media_type = "video"
             else:
@@ -977,6 +971,7 @@ CDN_BASE_URL = os.getenv("CDN_BASE_URL")
 # Initialize BlobServiceClient
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
 
+
 @router.get("/pix/download/{post_id}")
 async def download_pix(post_id: int, db: Session = Depends(get_db)):
     post = db.query(Post).filter_by(id=post_id).first()
@@ -1008,3 +1003,32 @@ async def download_pix(post_id: int, db: Session = Depends(get_db)):
 
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Could not retrieve media: {str(e)}")
+
+
+
+@router.delete("/delete-all-comments", status_code=status.HTTP_200_OK)
+async def delete_all_comments(
+    request: DeleteAllCommentsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user = current_user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized access.",
+        )
+
+    try:
+        await delete_all_comments_and_toggle_disable(
+            db, request.post_id, user.id, request.disable_comments
+        )
+        action_msg = " and commenting disabled" if request.disable_comments else ""
+        return {"message": f"All comments deleted{action_msg} for this post."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
