@@ -422,113 +422,81 @@ async def authenticateUserID(db, user_id):
     return user
 
 async def delete_account_svc(db: Session, user_id: int) -> bool:
-
     try:
-        # 0. Fetch the user
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return False
 
-        # Pre-fetch post and comment IDs for user
-        post_ids = [post.id for post in db.query(Post).filter(Post.author_id == user_id).all()]
-        comment_ids = [comment.id for comment in db.query(Comment).filter(Comment.user_id == user_id).all()]
+        # Pre-fetch IDs
+        post_ids = [p.id for p in db.query(Post).filter(Post.author_id == user_id).all()]
+        comment_ids = [c.id for c in db.query(Comment).filter(Comment.user_id == user_id).all()]
 
-        # 1. Delete NSFW detections for user's posts (raw SQL because model is not in code)
-        if post_ids:
-           placeholders = ", ".join(str(pid) for pid in post_ids) 
-           sql = f"DELETE FROM nsfw_detection WHERE post_id IN ({placeholders})"
-           db.execute(text(sql))
-        # 2. Delete reports on user's posts
-        if post_ids:
-            db.query(ReportPost).filter(ReportPost.post_id.in_(post_ids)).delete(synchronize_session=False)
-
-        # 3. Delete user-to-user reports
-        db.query(ReportUser).filter(
-            (ReportUser.reported_by == user_id) | (ReportUser.user_id == user_id)
-        ).delete(synchronize_session=False)
-
-        # 4. Delete reports on user's comments
+        # 1. Delete Comment Dependencies
         if comment_ids:
+            print(f"Deleting Report Comments for user_id: {user_id}")
             db.query(ReportComment).filter(ReportComment.comment_id.in_(comment_ids)).delete(synchronize_session=False)
 
-        # 5. Delete media interactions on user's posts
+        # 2. Delete Post Dependencies
         if post_ids:
+            placeholders = ", ".join(str(pid) for pid in post_ids)
+            print(f"Deleting NSFW detections for posts: {placeholders}")
+            db.execute(text(f"DELETE FROM nsfw_detection WHERE post_id IN ({placeholders})"))
+
+            print("Deleting related post data...")
+            db.query(ReportPost).filter(ReportPost.post_id.in_(post_ids)).delete(synchronize_session=False)
             db.query(MediaInteraction).filter(MediaInteraction.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.query(Comment).filter(Comment.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.query(Like).filter(Like.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.query(post_hashtags).filter(post_hashtags.c.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.query(post_likes).filter(post_likes.c.post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.query(UserSavedPosts).filter(UserSavedPosts.saved_post_id.in_(post_ids)).delete(synchronize_session=False)
+            db.execute(text(f"DELETE FROM bookmarks WHERE post_id IN ({placeholders})"))
 
-        # 6. Delete likes on user's posts
-        db.query(Like).filter(Like.post.has(author_id=user_id)).delete(synchronize_session=False)
-
-        # 7. Delete comments on user's posts
-        db.query(Comment).filter(Comment.post.has(author_id=user_id)).delete(synchronize_session=False)
-
-        # 8. Delete user's own comments
-        db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
-
-        # 9. Delete post hashtags
-        if post_ids:
-            db.execute(post_hashtags.delete().where(post_hashtags.c.post_id.in_(post_ids)))
-
-        # 10. Delete user's posts
-        db.query(Post).filter(Post.author_id == user_id).delete(synchronize_session=False)
-
-        # 11. Delete saved posts
-        db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).delete(synchronize_session=False)
-
-        # 12. Delete shared posts (sent and received)
+        # 3. Delete User-Related Association Tables
+        print(f"Deleting user-related data for user_id: {user_id}")
         db.query(UserSharedPosts).filter(
             (UserSharedPosts.sender_user_id == user_id) |
             (UserSharedPosts.receiver_user_id == user_id)
         ).delete(synchronize_session=False)
-
-        # 13. Delete follow relationships
+        db.query(MediaInteraction).filter(MediaInteraction.user_id == user_id).delete(synchronize_session=False)
+        db.query(FollowRequest).filter(
+            (FollowRequest.requester_id == user_id) |
+            (FollowRequest.target_id == user_id)
+        ).delete(synchronize_session=False)
         db.query(Follow).filter(
-            (Follow.follower_id == user_id) | (Follow.following_id == user_id)
+            (Follow.follower_id == user_id) |
+            (Follow.following_id == user_id)
         ).delete(synchronize_session=False)
-
-        # 14. Delete blocked users (both directions)
         db.query(BlockedUsers).filter(
-            (BlockedUsers.blocker_id == user_id) | (BlockedUsers.blocked_id == user_id)
+            (BlockedUsers.blocker_id == user_id) |
+            (BlockedUsers.blocked_id == user_id)
         ).delete(synchronize_session=False)
-
-        # 15. Delete activity logs
-        db.query(Activity).filter(
-            (Activity.username == user.username) |
-            (Activity.username_like == user.username) |
-            (Activity.username_comment == user.username) |
-            (Activity.followed_username == user.username)
+        db.query(ReportUser).filter(
+            (ReportUser.user_id == user_id) |
+            (ReportUser.reported_by == user_id)
         ).delete(synchronize_session=False)
-
-        # 16. Delete OTP entries
+        db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id).delete(synchronize_session=False)
+        db.execute(text("DELETE FROM bookmarks WHERE user_id = :user_id"), {"user_id": user_id})
+        db.query(post_likes).filter(post_likes.c.user_id == user_id).delete(synchronize_session=False)
+        db.execute(text("DELETE FROM user_categories WHERE user_id = :user_id"), {"user_id": user_id})
+        db.execute(text("DELETE FROM user_recommendations WHERE user_id = :user_id"), {"user_id": user_id})
+        db.query(UserAppReport).filter(UserAppReport.reporting_user_id == user_id).delete(synchronize_session=False)
+        db.query(UserDevice).filter(UserDevice.user_id == user_id).delete(synchronize_session=False)
+        db.query(UserDeviceContact).filter(UserDeviceContact.user_device_id == user_id).delete(synchronize_session=False)
         db.query(OTP).filter(OTP.user_id == user_id).delete(synchronize_session=False)
 
-        # 17. Delete follow requests
-        db.query(FollowRequest).filter(
-            (FollowRequest.requester_id == user_id) | (FollowRequest.target_id == user_id)
-        ).delete(synchronize_session=False)
+        # 4. Delete Posts and Comments
+        print("Deleting Posts and Comments...")
+        db.query(Post).filter(Post.author_id == user_id).delete(synchronize_session=False)
+        db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
 
-        # 18. Delete device contacts
-        db.query(UserDeviceContact).filter(UserDeviceContact.user_device_id == user_id).delete(synchronize_session=False)
-
-        # 19. Delete post likes (not covered earlier)
-        db.query(post_likes).filter(post_likes.c.user_id == user_id).delete(synchronize_session=False)
-
-        # 20. Delete bookmarks
-        db.execute(text("DELETE FROM bookmarks WHERE user_id = :user_id"),{"user_id": user_id})
-
-        # 21. Delete user recommendations
-        user_ids = [user_id]  # or however you build it
-        if user_ids:
-           placeholders = ", ".join(str(uid) for uid in user_ids)
-        db.execute(text(f"DELETE FROM bookmarks WHERE user_id IN ({placeholders})"))
-
-        # 22. Delete app-level user reports
-        db.query(UserAppReport).filter(UserAppReport.reporting_user_id == user_id).delete(synchronize_session=False)
-
-        # 23. Finally, delete the user record
+        # 5. Finally, Delete User
+        print(f"Deleting user record for user_id: {user_id}")
         db.delete(user)
 
         # Commit all deletions
         db.commit()
+        print(f"✅ Account deletion completed for user_id: {user_id}")
 
         return True
 

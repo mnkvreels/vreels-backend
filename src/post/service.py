@@ -750,86 +750,92 @@ async def unsave_post_svc(db: Session, user_id: int, post_id: int):
 
     return {"message": "Post unsaved successfully"}
 
-async def get_saved_posts_svc(db: Session, user_id: int, page: int, limit: int):
+async def get_saved_posts_svc(
+    db: Session, 
+    user_id: int, 
+    page: int, 
+    limit: int, 
+    source: Optional[str] = None
+):
     offset = (page - 1) * limit
+
     # Blocked users: anyone the current user blocked or who blocked them
     blocked_user_ids = set(
         row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == user_id)
     ).union(
         row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == user_id)
     )
-    '''
-    total_count = (
-        db.query(UserSavedPosts)
-        .filter(UserSavedPosts.user_id == user_id)
-        .count()
-    )
-    '''
-        # Get total count excluding blocked posts
-    total_count = (
-        db.query(UserSavedPosts)
-        .join(Post, UserSavedPosts.saved_post_id == Post.id)
-        .filter(UserSavedPosts.user_id == user_id)
-        .filter(~Post.author_id.in_(blocked_user_ids))
-        .count()
-    )
-    liked_post_ids = set(
-        db.query(Like.post_id)
-        .filter(Like.user_id == user_id)
-        .all()
-    )
-    liked_post_ids = {pid[0] for pid in liked_post_ids}
 
-    # Saved post_ids (optional since you're already filtering from saved)
-    saved_post_ids = set(
-        db.query(UserSavedPosts.saved_post_id)
-        .filter(UserSavedPosts.user_id == user_id)
-        .all()
+    # Base count query
+    count_query = db.query(UserSavedPosts).join(Post, UserSavedPosts.saved_post_id == Post.id).filter(
+        UserSavedPosts.user_id == user_id,
+        ~Post.author_id.in_(blocked_user_ids)
     )
-    saved_post_ids = {pid[0] for pid in saved_post_ids}
 
-    saved_posts = (
-        db.query(
-            UserSavedPosts.id.label("saved_post_id"),
-            Post.id.label("post_id"),
-            Post.content,
-            Post.media,
-            Post.location,
-            Post.author_id,
-            Post.created_at,
-            Post.likes_count,
-            Post.comments_count,
-            Post.save_count,
-            Post.views_count,
-            Post.report_count,
-            Post.thumbnail,
-            Post.category_of_content,
-            Post.media_type,
-            Post.share_count,
-            Post.visibility,
-            User.username,
-        )
-        .join(Post, UserSavedPosts.saved_post_id == Post.id)
-        .join(User, Post.author_id == User.id)
-        .filter(UserSavedPosts.user_id == user_id)
-        .filter(~Post.author_id.in_(blocked_user_ids))  # ❌ Exclude blocked users' posts
-        .order_by(desc(UserSavedPosts.created_at))
-        .offset(offset).limit(limit)
-        .all()
+    # ✅ Apply media_type filter to count query
+    if source == "pix":
+        count_query = count_query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+        count_query = count_query.filter(func.lower(Post.media_type) == "video")
+
+    total_count = count_query.count()
+
+    # Liked and Saved post IDs
+    liked_post_ids = {
+        pid[0] for pid in db.query(Like.post_id).filter(Like.user_id == user_id).all()
+    }
+    saved_post_ids = {
+        pid[0] for pid in db.query(UserSavedPosts.saved_post_id).filter(UserSavedPosts.user_id == user_id).all()
+    }
+
+    # Base posts query
+    posts_query = db.query(
+        UserSavedPosts.id.label("saved_post_id"),
+        Post.id.label("post_id"),
+        Post.content,
+        Post.media,
+        Post.location,
+        Post.author_id,
+        Post.created_at,
+        Post.likes_count,
+        Post.comments_count,
+        Post.save_count,
+        Post.views_count,
+        Post.report_count,
+        Post.thumbnail,
+        Post.category_of_content,
+        Post.media_type,
+        Post.share_count,
+        Post.visibility,
+        User.username,
+    ).join(Post, UserSavedPosts.saved_post_id == Post.id).join(User, Post.author_id == User.id).filter(
+        UserSavedPosts.user_id == user_id,
+        ~Post.author_id.in_(blocked_user_ids)
     )
-    
+
+    # ✅ Apply media_type filter to posts query
+    if source == "pix":
+        posts_query = posts_query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+        posts_query = posts_query.filter(func.lower(Post.media_type) == "video")
+
+    saved_posts = posts_query.order_by(desc(UserSavedPosts.created_at)).offset(offset).limit(limit).all()
+
     return {
         "total_count": total_count,
         "page": page,
         "limit": limit,
-        "total_pages": (total_count + limit - 1) // limit,  # To calculate total pages
+        "total_pages": (total_count + limit - 1) // limit,
         "data": [
-            {**{k if k != "post_id" else "id": v for k, v in row._mapping.items()},
-            "is_liked": row.post_id in liked_post_ids,
-            "is_saved": row.post_id in saved_post_ids,
+            {
+                **{k if k != "post_id" else "id": v for k, v in row._mapping.items()},
+                "is_liked": row.post_id in liked_post_ids,
+                "is_saved": row.post_id in saved_post_ids,
+            }
+            for row in saved_posts
+        ],
     }
-                  for row in saved_posts],
-    }
+
 
 async def share_post_svc(db: Session, sender_user_id: int, request: SharePostRequest):
     """Shares a post with multiple users, prevents duplicates, and updates share count."""
@@ -951,8 +957,14 @@ async def serialize_posts(posts, db: Session, current_user: User):
         result.append(post_dict)
     return result
 
-async def get_public_posts_svc(db: Session, current_user: User, page: int, limit: int):
-    query = db.query(Post).filter(Post.visibility == "public", Post.author_id == current_user.id).order_by(desc(Post.created_at))
+async def get_public_posts_svc(db: Session, current_user: User, page: int, limit: int, source: Optional[str] = None):
+    query = db.query(Post).filter(Post.visibility == "public", Post.author_id == current_user.id)
+    if source == "pix":
+      query = query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+      query = query.filter(func.lower(Post.media_type) == "video")
+
+    query = query.order_by(desc(Post.created_at))
     total_count = query.count()
 
     posts = query.offset((page - 1) * limit).limit(limit).all()
@@ -967,8 +979,14 @@ async def get_public_posts_svc(db: Session, current_user: User, page: int, limit
     }
 
 
-async def get_private_posts_svc(db: Session, current_user: User, page: int, limit: int):
-    query = db.query(Post).filter(Post.author_id == current_user.id, Post.visibility == "private").order_by(desc(Post.created_at))
+async def get_private_posts_svc(db: Session, current_user: User, page: int, limit: int, source: Optional[str] = None):
+    query = db.query(Post).filter(Post.author_id == current_user.id, Post.visibility == "private")
+    if source == "pix":
+        query = query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+        query = query.filter(func.lower(Post.media_type) == "video")
+
+    query = query.order_by(desc(Post.created_at))
     total_count = query.count()
 
     posts = query.offset((page - 1) * limit).limit(limit).all()
@@ -1287,23 +1305,35 @@ async def search_users_svc(query: str, db: Session, current_user: User, page: in
         ]
     }
 
-
-async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: int) -> dict:
-
+async def get_user_liked_posts_svc(
+    db: Session, 
+    user_id: int, 
+    page: int, 
+    limit: int, 
+    source: Optional[str] = None  # ✅ Added source parameter
+) -> dict:
     # 🔒 Get all blocked or blocking users
     blocked_user_ids = set(
         row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == user_id)
     ).union(
         row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == user_id)
     )
-    # Correct count using post_likes
-    total_count = (
-        db.query(func.count(Post.id))
-        .join(post_likes, Post.id == post_likes.c.post_id)
-        .filter(post_likes.c.user_id == user_id)
-        .filter(~Post.author_id.in_(blocked_user_ids))
-        .scalar()
+
+    # Base count query
+    count_query = db.query(func.count(Post.id)).join(
+        post_likes, Post.id == post_likes.c.post_id
+    ).filter(
+        post_likes.c.user_id == user_id,
+        ~Post.author_id.in_(blocked_user_ids)
     )
+
+    # ✅ Apply media type filtering for count
+    if source == "pix":
+        count_query = count_query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+        count_query = count_query.filter(func.lower(Post.media_type) == "video")
+
+    total_count = count_query.scalar()
 
     offset = (page - 1) * limit
     if offset >= total_count:
@@ -1315,17 +1345,21 @@ async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: 
             "data": [],
         }
 
-    # Correctly fetch liked posts
-    liked_posts = (
-        db.query(Post)
-        .join(post_likes, Post.id == post_likes.c.post_id)
-        .filter(post_likes.c.user_id == user_id)
-        .filter(~Post.author_id.in_(blocked_user_ids))
-        .order_by(desc(Post.created_at))
-        .offset(offset)
-        .limit(limit)
-        .all()
+    # Base liked posts query
+    posts_query = db.query(Post).join(
+        post_likes, Post.id == post_likes.c.post_id
+    ).filter(
+        post_likes.c.user_id == user_id,
+        ~Post.author_id.in_(blocked_user_ids)
     )
+
+    # ✅ Apply media type filtering for posts
+    if source == "pix":
+        posts_query = posts_query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+        posts_query = posts_query.filter(func.lower(Post.media_type) == "video")
+
+    liked_posts = posts_query.order_by(desc(Post.created_at)).offset(offset).limit(limit).all()
 
     result = []
     for post in liked_posts:
@@ -1338,7 +1372,7 @@ async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: 
         # Update counts
         post.update_likes_and_comments_count(db)
 
-        # Since this is liked posts, this is always true
+        # This is a liked post, always true
         post_dict["is_liked"] = True
 
         # Saved status
@@ -1356,3 +1390,4 @@ async def get_user_liked_posts_svc(db: Session, user_id: int, page: int, limit: 
         "total_pages": (total_count + limit - 1) // limit,
         "data": result,
     }
+

@@ -228,13 +228,13 @@ async def unsave_post(request: SavePostRequest, db: Session = Depends(get_db), c
     return await unsave_post_svc(db, current_user.id, request.post_id)
 
 @router.get("/savedposts", status_code=status.HTTP_200_OK)
-async def get_saved_posts(page: int, limit: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def get_saved_posts(page: int, limit: int,source: Optional[str] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     user = current_user
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="You are not authorized."
         )
-    saved_posts = await get_saved_posts_svc(db, user.id, page, limit)
+    saved_posts = await get_saved_posts_svc(db, user.id, page, limit, source)
     return saved_posts
 
 @router.post("/sharepost")
@@ -470,8 +470,8 @@ async def get_comments_for_post(
 
 # Get public posts
 @router.get("/public", status_code=status.HTTP_200_OK)
-async def get_public_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_public_posts_svc(db, current_user, page, limit)
+async def get_public_posts(page: int, limit: int,source: Optional[str] = None,db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_public_posts_svc(db, current_user, page, limit,source)
     if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No public posts found."
@@ -480,8 +480,8 @@ async def get_public_posts(page: int, limit: int, db: Session = Depends(get_db),
 
 # Get private posts (only visible to uuser)
 @router.get("/private", status_code=status.HTTP_200_OK)
-async def get_private_posts(page: int, limit: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
-    posts = await get_private_posts_svc(db, current_user, page, limit)
+async def get_private_posts(page: int, limit: int,source: Optional[str] =None, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    posts = await get_private_posts_svc(db, current_user, page, limit,source)
     if not posts:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No private posts found."
@@ -532,6 +532,7 @@ async def search_users(page: int ,limit: int, query: str, db: Session = Depends(
 async def get_current_user_liked_posts(
     page: int,
     limit: int,
+    source: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -542,7 +543,7 @@ async def get_current_user_liked_posts(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You are not authorized."
         )
-    posts = await get_user_liked_posts_svc(db, user.id, page, limit)
+    posts = await get_user_liked_posts_svc(db, user.id, page, limit,source)
     return posts
 
 @router.post("/log-media-interactions")
