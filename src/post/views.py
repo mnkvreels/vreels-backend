@@ -92,7 +92,6 @@ class CommentRequest(BaseModel):
 # Regex pattern to check if a string is a valid URL
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
 
-'''
 
 @router.post("/", status_code=status.HTTP_200_OK, response_model=PostResponse)
 async def create_post(
@@ -134,61 +133,7 @@ async def create_post(
     # Create the post with the file URL (if any)
     return await create_post_svc(db, post, current_user.id, file_url)
 
-'''
 
-
-@router.post("/", status_code=status.HTTP_200_OK, response_model=PostResponse)
-async def create_post(
-    visibility: VisibilityEnum = Form(VisibilityEnum.public),
-    content: Optional[str] = Form(None),
-    file: UploadFile = Form(...),
-    location: Optional[str] = Form(None),
-    category_of_content: Optional[str] = Form(None),
-    video_length: Optional[int] = Form(None),
-    hashtags: Optional[str] = Form(None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    try:
-        # Save file temporarily
-        suffix = Path(file.filename).suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await file.read())
-            temp_path = Path(tmp.name)
-
-        # Predict category
-        if suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"}:
-            predicted_category = predict_category_image(temp_path)
-        elif suffix.lower() in {".mp4", ".mov", ".avi", ".mkv"}:
-            predicted_category = predict_category_video(temp_path)
-        else:
-            predicted_category = "Unknown"
-
-        # Upload file to blob
-        file.file.seek(0)
-        file_url, media_type, thumbnail_url = await upload_and_compress(file, current_user.username, str(current_user.id))
-
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()  # cleanup temp file
-
-    hashtags_list = [tag.strip() for tag in hashtags.split(",")] if hashtags else []
-
-    post = PostCreate(
-        content=content,
-        location=location,
-        visibility=visibility,
-        category_of_content=predicted_category,  # ✅ Use predicted category
-        media_type=media_type,
-        thumbnail=thumbnail_url,
-        video_length=0 if media_type == "image" else video_length,
-        hashtags=hashtags_list
-    )
-
-    return await create_post_svc(db, post, current_user.id, file_url)
  
 
 @router.patch("/edit/{post_id}", status_code=status.HTTP_200_OK)
@@ -1020,10 +965,10 @@ async def get_pix_by_category(
     }
 
     
-AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")
+AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING", "DefaultEndpointsProtocol=https;AccountName=vreelsstorage;AccountKey=YkdFdR/UTuWKJnB4nmYJPV+NaqgsP9Vy3LVHIJ2R6m10jWM4v2a141Fh0HA+95BNs5PH6k/OTO2X+AStlUmb6Q==;EndpointSuffix=core.windows.net")
 AZURE_IMAGE_CONTAINER = os.getenv("AZURE_IMAGE_CONTAINER", "images")
 AZURE_VIDEO_CONTAINER = os.getenv("AZURE_VIDEO_CONTAINER", "videos")
-CDN_BASE_URL = os.getenv("CDN_BASE_URL")
+CDN_BASE_URL = os.getenv("CDN_BASE_URL","https://vreelspostscdn-fmedgweqdkc6fah5.z01.azurefd.net")
 
 # Initialize BlobServiceClient
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
