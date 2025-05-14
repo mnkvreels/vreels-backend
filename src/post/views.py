@@ -61,8 +61,8 @@ from ..models.post import VisibilityEnum, MediaInteraction
 from ..auth.enums import AccountTypeEnum
 from ..models.user import UserDevice, User, Follow
 from ..notification_service import send_push_notification
-from pathlib import Path
-from ..category import predict_category_image, predict_category_video
+
+
 
 import httpx
 from tempfile import NamedTemporaryFile
