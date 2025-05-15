@@ -16,7 +16,7 @@ from datetime import *
 from ..database import get_db
 from fastapi.responses import StreamingResponse
 from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest
-from src.models.post import Post,post_likes, Category
+from src.models.post import Post,post_likes, Category, Pouch, PouchPost
 from azure.storage.blob import BlobServiceClient
 
 
@@ -1033,4 +1033,96 @@ async def delete_all_comments(
             detail=str(e),
         )
 
+@router.post("/pouches")
+async def create_pouch(
+    name: str,
+    description: str,
+    visibility: VisibilityEnum,
+    post_ids: List[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    pouch = Pouch(
+        name=name,
+        description=description,
+        visibility=visibility,
+        user_id=current_user.id
+    )
+
+    db.add(pouch)
+    db.flush()  # Get pouch.id before committing
+
+    for post_id in post_ids:
+        db.add(PouchPost(pouch_id=pouch.id, post_id=post_id))
+
+    db.commit()
+    return {"success": True, "message": "Pouch created", "pouch_id": pouch.id}
+
+@router.put("/pouches/{pouch_id}")
+async def update_pouch(
+    pouch_id: int,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    visibility: Optional[VisibilityEnum] = None,
+    new_post_ids: Optional[List[int]] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    pouch = db.query(Pouch).filter_by(id=pouch_id, user_id=current_user.id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found or not owned by user")
+
+    if name:
+        pouch.name = name
+    if description:
+        pouch.description = description
+    if visibility:
+        pouch.visibility = visibility
+    if new_post_ids:
+        for post_id in new_post_ids:
+            exists = db.query(PouchPost).filter_by(pouch_id=pouch_id, post_id=post_id).first()
+            if not exists:
+                db.add(PouchPost(pouch_id=pouch_id, post_id=post_id))
+
+    db.commit()
+    return {"success": True, "message": "Pouch updated"}
+
+@router.get("/pouches/search")
+async def search_pouches(
+    query: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    public_pouches = db.query(Pouch).filter(
+        Pouch.visibility == VisibilityEnum.public,
+        Pouch.name.ilike(f"%{query}%")
+    )
+
+    own_pouches = db.query(Pouch).filter(
+        Pouch.user_id == current_user.id,
+        Pouch.visibility == VisibilityEnum.private,
+        Pouch.name.ilike(f"%{query}%")
+    )
+
+    friend_pouches = db.query(Pouch).filter(
+        Pouch.visibility == VisibilityEnum.friends,
+        Pouch.user.has(User.followers.any(id=current_user.id)),  # requires `friends` relationship
+        Pouch.name.ilike(f"%{query}%")
+    )
+
+    results = public_pouches.union(own_pouches).union(friend_pouches).all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "created_by": pouch.user.username
+            }
+            for pouch in results
+        ]
+    }
 

@@ -59,6 +59,7 @@ class User(Base):
     comments = relationship("Comment", back_populates="user", cascade="all, delete-orphan")
     likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
     liked_posts = relationship("Post", secondary="post_likes", back_populates="liked_by_users")
+    pouches = relationship("Pouch", back_populates="user")
     
     # Many-to-Many Relationships (via Follow table)
     followers = relationship("Follow", back_populates="following_user", foreign_keys="[Follow.following_id]")
