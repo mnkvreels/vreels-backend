@@ -8,7 +8,7 @@ from sqlalchemy import func ,literal_column, union_all
 from src.models.user import User, OTP, UserDevice, UserDeviceContact, Follow,BlockedUsers, UserCategory
 from src.auth.schemas import UserUpdate, User as UserSchema, UserCreate, UserIdRequest, DeviceTokenRequest, UpdateNotificationFlagsRequest, ToggleContactsSyncRequest, ContactIn, CategoryRequest, CategoryResponse
 from src.database import get_db
-from src.models.post import Post
+from src.models.post import Post,Category
 from typing import List
 from datetime import timedelta, datetime, timezone
 from .enums import AccountTypeEnum, GenderEnum
@@ -645,18 +645,25 @@ async def user_profile_setup(
 @router.post("/user/interests", status_code=200)
 async def set_user_interests(
     request: CategoryRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    db.query(UserCategory).filter_by(user_id=current_user.id).delete()
+    db: Session = Depends(get_db),    
+): 
+    user_id = request.user_id
+    # Fetch existing interests
+    existing_categories = db.query(UserCategory).filter_by(user_id=user_id).all()
+    existing_category_ids = {uc.category_id for uc in existing_categories}
 
-    interests = [
-        UserCategory(user_id=current_user.id, category_id=item.category_id, selected=item.selected)
-        for item in request.category_ids
-    ]
-    db.add_all(interests)
+    # Process selections
+    for item in request.category_ids:
+        if item.selected and item.category_id not in existing_category_ids:
+            # Add new interest
+            new_entry = UserCategory(user_id=user_id, category_id=item.category_id, selected=True)
+            db.add(new_entry)
+        elif not item.selected and item.category_id in existing_category_ids:
+            # Remove existing interest
+            db.query(UserCategory).filter_by(user_id=user_id, category_id=item.category_id).delete()
+
     db.commit()
-    return {"success": True, "message": "Interests updated"}
+    return {"success": True, "message": "Interests updated successfully.","user_id": user_id}
 
 @router.get("/user/interests", response_model=List[dict])
 async def get_user_interests(
@@ -685,3 +692,29 @@ async def get_user_interests(
         })
 
     return response
+
+#Get all the Categories
+@router.get("/user/categories")
+async def get_categories_for_selection(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    all_categories = db.query(Category).all()
+    selected_ids = set(
+        cid[0] for cid in db.query(UserCategory.category_id)
+        .filter_by(user_id=current_user.id).all()
+    )
+
+    return {
+    "success": True,
+    "data": [
+        {
+            "id": cat.id,
+            "name": cat.name,
+            "description": cat.description, 
+            "selected": cat.id in selected_ids,  # ✅ Mark selected categories
+            "sample_image_url": cat.sample_image,
+        }
+        for cat in all_categories
+    ]
+}

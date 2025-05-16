@@ -9,14 +9,15 @@ from videolength import get_video_duration_from_url
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func,select,insert
+from sqlalchemy import func,select,insert,desc
 from src.models.post import Like,Comment
 from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
 from fastapi.responses import StreamingResponse
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest
-from src.models.post import Post,post_likes, Category
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest,PouchCreateRequest,PouchUpdateRequest
+from src.models.post import Post,post_likes, Category, Pouch, PouchPost,UserSavedPosts
+from src.models.user import UserCategory
 from azure.storage.blob import BlobServiceClient
 
 
@@ -158,7 +159,7 @@ async def edit_post(
 async def get_current_user_posts(
     page: int, 
     limit: int,
-    media_type: Optional[str] = Query(None, description="Filter by media type (e.g., video, image)"), 
+    source: Optional[str] = Query(None, description="Filter by media type (e.g., video, image)"), 
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)):
     # verify the token
@@ -168,12 +169,13 @@ async def get_current_user_posts(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found."
         )
-    posts = await get_user_posts_svc(db, user.id, current_user, page, limit, media_type)
+    posts = await get_user_posts_svc(db, user.id, current_user, page, limit, source)
     return posts
 
 
 @router.get("/userposts")
-async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user) ):
+async def get_user_posts_by_username(page: int, limit: int, request: UserRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), 
+                                     source: Optional[str] = Query(None, description="Filter by media type (e.g., video, image)") ):
     # verify token
     user = await existing_user(db, request.username)
     if not user:
@@ -210,7 +212,7 @@ async def get_user_posts_by_username(page: int, limit: int, request: UserRequest
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not allowed to view posts of this private account."
             )
-    posts = await get_user_posts_svc(db, user.id, current_user, page, limit)
+    posts = await get_user_posts_svc(db, user.id, current_user, page, limit, source)
     return posts
 
 @router.post("/savepost", status_code=status.HTTP_201_CREATED)
@@ -348,7 +350,7 @@ async def like_post(request: PostRequest, db: Session = Depends(get_db), current
                 except Exception as e:
                     print(f"Notification failed for device {device.device_id}: {e}")
 
-    return {"message": "Liked the post"}
+    return res
 
 @router.post("/unlike", status_code=status.HTTP_200_OK)
 async def unlike_post(request: PostRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -510,9 +512,9 @@ async def get_posts_by_visibility(page: int, limit: int, visibility: VisibilityE
 #get following users posts
 @router.get("/followingposts")
 async def get_following_posts(
-    page: int , limit: int , db: Session = Depends(get_db), user=Depends(get_current_user)
+    page: int , limit: int , db: Session = Depends(get_db), user=Depends(get_current_user), source: Optional[str] = None
 ):
-    return await get_following_posts_svc(db, user.id, page, limit)
+    return await get_following_posts_svc(db, user.id, page, limit,source)
 
 @router.get("/search/hashtags")
 async def search_hashtags(page: int,limit: int, query: str, db: Session = Depends(get_db)):
@@ -897,7 +899,7 @@ async def search_pix(
     offset = (page - 1) * limit
     
     pix_posts = db.query(Post).filter(
-        # Post.media_type == "image",
+        Post.media_type == "image",
         Post.content.ilike(f"%{query}%")
     )
     
@@ -1033,4 +1035,198 @@ async def delete_all_comments(
             detail=str(e),
         )
 
+@router.post("/pouches")
+async def create_pouch(
+    request: PouchCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Create the pouch
+    pouch = Pouch(
+        name=request.name,
+        description=request.description,
+        visibility=request.visibility,
+        user_id=current_user.id
+    )
+    db.add(pouch)
+    db.flush()
+    if request.post_ids:
+       for post_id in request.post_ids:
+        db.add(PouchPost(pouch_id=pouch.id, post_id=post_id))
 
+    db.commit()
+
+    # 🔍 First, try exact match
+    related_posts = (
+        db.query(Post)
+        .filter(Post.category_of_content.ilike(request.name))
+        .all()
+    )
+
+    # 🔍 If no exact matches, try wildcard search
+    if not related_posts:
+        related_posts = (
+            db.query(Post)
+            .filter(Post.category_of_content.ilike(f"%{request.name}%"))
+            .all()
+        )
+
+    # Prepare response
+    related_images = [
+    {
+        "post_id": post.id,
+        "media_url": post.media,
+        "selected": post.id in request.post_ids if request.post_ids else False
+    }
+    for post in related_posts
+]
+
+    return {
+        "success": True,
+        "message": "Pouch created",
+        "pouch_id": pouch.id,
+        "related_images": related_images
+    }
+
+
+
+@router.put("/pouches/{pouch_id}")
+async def update_pouch(
+    pouch_id: int,
+    request: PouchUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    pouch = db.query(Pouch).filter_by(id=pouch_id, user_id=current_user.id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found or not owned by user")
+
+    if request.name:
+        pouch.name = request.name
+    if request.description:
+        pouch.description = request.description
+    if request.visibility:
+        pouch.visibility = request.visibility
+    if request.new_post_ids:
+        for post_id in request.new_post_ids:
+            exists = db.query(PouchPost).filter_by(pouch_id=pouch_id, post_id=post_id).first()
+            if not exists:
+                db.add(PouchPost(pouch_id=pouch_id, post_id=post_id))
+    if request.remove_post_ids:
+     db.query(PouchPost).filter(
+        PouchPost.pouch_id == pouch_id, 
+        PouchPost.post_id.in_(request.remove_post_ids)
+    ).delete(synchronize_session=False)
+
+    db.commit()
+    updated_post_ids = [
+        pp.post_id for pp in db.query(PouchPost).filter_by(pouch_id=pouch_id).all()
+    ]
+    return {
+        "success": True,
+        "message": "Pouch updated successfully.",
+        "pouch": {
+            "id": pouch.id,
+            "name": pouch.name,
+            "description": pouch.description,
+            "visibility": pouch.visibility,
+            "post_ids": updated_post_ids
+        }
+    }
+
+@router.get("/pouches/search")
+async def search_pouches(
+    query: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    public_pouches = db.query(Pouch).filter(
+        Pouch.visibility == VisibilityEnum.public,
+        Pouch.name.ilike(f"%{query}%")
+    )
+
+    own_pouches = db.query(Pouch).filter(
+        Pouch.user_id == current_user.id,
+        Pouch.visibility == VisibilityEnum.private,
+        Pouch.name.ilike(f"%{query}%")
+    )
+
+    friend_pouches = db.query(Pouch).filter(
+        Pouch.visibility == VisibilityEnum.friends,
+        Pouch.user.has(User.followers.any(id=current_user.id)),  # requires `friends` relationship
+        Pouch.name.ilike(f"%{query}%")
+    )
+
+    results = public_pouches.union(own_pouches).union(friend_pouches).all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "created_by": pouch.user.username
+            }
+            for pouch in results
+        ]
+    }
+
+@router.get("/pouches/{pouch_id}/posts", response_model=dict)
+async def get_pouch_posts(
+    pouch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1)
+):
+    offset = (page - 1) * limit
+
+    # Verify pouch exists
+    pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found.")
+
+    # Access Control: Private pouch can only be accessed by owner
+    if pouch.visibility == "private" and pouch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to view this pouch.")
+
+    # Fetch related posts via pouch_posts
+    query = (
+        db.query(Post)
+        .join(PouchPost, PouchPost.post_id == Post.id)
+        .filter(PouchPost.pouch_id == pouch_id)
+        .order_by(desc(Post.created_at))
+    )
+
+    total_count = query.count()
+    posts = query.offset(offset).limit(limit).all()
+
+    result = []
+    for post in posts:
+        post_dict = post.__dict__.copy()
+        post_dict["username"] = post.author.username if post.author else None
+        post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
+
+        post.update_likes_and_comments_count(db)
+
+        post_dict["is_liked"] = db.query(Like).filter(
+            Like.user_id == current_user.id,
+            Like.post_id == post.id
+        ).first() is not None
+
+        post_dict["is_saved"] = db.query(UserSavedPosts).filter(
+            UserSavedPosts.user_id == current_user.id,
+            UserSavedPosts.saved_post_id == post.id
+        ).first() is not None
+
+        result.append(post_dict)
+
+    return {
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit,
+        "data": result,
+    }

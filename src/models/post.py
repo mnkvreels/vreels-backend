@@ -73,6 +73,7 @@ class Post(Base):
     # Many-to-Many Relationships
     liked_by_users = relationship("User", secondary="post_likes", back_populates="liked_posts")
     hashtags = relationship("Hashtag", secondary="post_hashtags", back_populates="posts")
+    pouches = relationship("Pouch", secondary="pouch_posts", back_populates="pixs")
 
     # One-to-Many Relationships
     likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
@@ -153,4 +154,23 @@ class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    sample_image = Column(String)
+    description = Column(String)
 
+class Pouch(Base):
+    __tablename__ = "pouches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    visibility = Column(Enum(VisibilityEnum), nullable=False, default="private")
+
+    user = relationship("User", back_populates="pouches")
+    pixs = relationship("Post", secondary="pouch_posts", back_populates="pouches")
+
+class PouchPost(Base):
+    __tablename__ = "pouch_posts"
+    id = Column(Integer, primary_key=True, index=True)
+    pouch_id = Column(Integer, ForeignKey("pouches.id"))
+    post_id = Column(Integer, ForeignKey("posts.id"))
