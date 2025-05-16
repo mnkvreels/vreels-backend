@@ -134,3 +134,16 @@ class SeedPexelsRequest(BaseModel):
 class DeleteAllCommentsRequest(BaseModel):
     post_id: int
     disable_comments: bool = False  # Optional, defaults to False if not provided
+
+class PouchCreateRequest(BaseModel):
+    name: str
+    description: str
+    visibility: VisibilityEnum
+    post_ids:Optional[List[int]]
+
+class PouchUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    visibility: Optional[VisibilityEnum] = None
+    new_post_ids: Optional[List[int]] = None
+    remove_post_ids: Optional[List[int]]

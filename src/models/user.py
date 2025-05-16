@@ -74,6 +74,7 @@ class User(Base):
     shared_posts_received = relationship("UserSharedPosts", foreign_keys="[UserSharedPosts.receiver_user_id]", back_populates="receiver", cascade="all, delete")
     devices = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan")
     media_interactions = relationship("MediaInteraction", back_populates="user", cascade="all, delete-orphan")
+    pouches = relationship("Pouch", back_populates="user")
 
 class BlockedUsers(Base):
     __tablename__ = "blocked_users"

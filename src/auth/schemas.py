@@ -83,6 +83,7 @@ class CategoryItem(BaseModel):
     selected: bool
 
 class CategoryRequest(BaseModel):
+    user_id: int
     category_ids: List[CategoryItem]
 
 class CategoryResponse(BaseModel):

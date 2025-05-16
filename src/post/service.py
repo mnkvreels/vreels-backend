@@ -8,7 +8,7 @@ from typing import Union, Optional, List
 from sqlalchemy import desc, func, select
 from fastapi import HTTPException, status
 from .schemas import PostCreate, Post as PostSchema, Hashtag as HashtagSchema, SharePostRequest
-from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes, MediaInteraction
+from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts, UserSharedPosts, Like, post_likes, MediaInteraction,Pouch, PouchPost
 from ..models.report import ReportPost
 from ..models.user import User, Follow, FollowRequest, BlockedUsers
 from ..auth.schemas import User as UserSchema
@@ -79,36 +79,85 @@ async def get_user_posts_svc(
     current_user: Optional[User],
     page: int,
     limit: int,
-    media_type: Optional[str] = None
+    source: Optional[str] = None
 ) -> dict:
-    # Calculate the offset for pagination
     offset = (page - 1) * limit
 
-    # Base query: Fetch posts by the specified user
+    if source == "pouch":
+        query = db.query(Pouch).filter(Pouch.user_id == user_id)
+
+        # Show both public and private if current user is the owner
+        if not current_user or current_user.id != user_id:
+            query = query.filter(Pouch.visibility == "public")
+
+        query = query.order_by(desc(Pouch.id))
+        total_count = query.count()
+
+        if offset >= total_count:
+            return {
+                "total_count": total_count,
+                "page": page,
+                "limit": limit,
+                "total_pages": (total_count + limit - 1) // limit,
+                "data": [],
+            }
+
+        pouches = query.offset(offset).limit(limit).all()
+        data = []
+
+        for pouch in pouches:
+            pouch_posts = (
+                db.query(PouchPost)
+                .filter(PouchPost.pouch_id == pouch.id)
+                .limit(3)
+                .all()
+            )
+
+            post_images = [
+                db.query(Post).filter(Post.id == pp.post_id).first().media
+                for pp in pouch_posts
+            ]
+
+            preview_slots = post_images[:3] + ["empty"] * (3 - len(post_images))
+
+            data.append({
+                "pouch_id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "pouch_preview": preview_slots  # Always 3 items
+            })
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": data,
+        }
+
+    # ✅ Continue with posts fetching logic
     posts_query = db.query(Post).filter(Post.author_id == user_id)
 
-    if media_type:
-      posts_query = posts_query.filter(Post.media_type == media_type)
+    if source == "pix":
+        posts_query = posts_query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+    elif source == "reels":
+        posts_query = posts_query.filter(func.lower(Post.media_type) == "video")
 
-    # Apply visibility filters
+    # Show both public and private posts if current user is owner
     if not current_user or current_user.id != user_id:
-        # If the current user is not the owner, show only public posts
         posts_query = posts_query.filter(Post.visibility == "public")
 
-    # Block check
     if current_user and current_user.id != user_id:
         blocked = db.query(BlockedUsers).filter(
             ((BlockedUsers.blocker_id == current_user.id) & (BlockedUsers.blocked_id == user_id)) |
             ((BlockedUsers.blocker_id == user_id) & (BlockedUsers.blocked_id == current_user.id))
         ).first()
-
         if blocked:
             raise HTTPException(status_code=403, detail="Posts from this user are not accessible.")
 
-    # Count total posts after applying visibility filters
     total_count = posts_query.count()
 
-    # Handle case where offset exceeds total count
     if offset >= total_count:
         return {
             "total_count": total_count,
@@ -118,7 +167,6 @@ async def get_user_posts_svc(
             "data": [],
         }
 
-    # Fetch posts with pagination
     posts = (
         posts_query
         .order_by(desc(Post.created_at))
@@ -129,23 +177,18 @@ async def get_user_posts_svc(
 
     result = []
     for post in posts:
-        #Get dynamic attributes like 'username'. 'hashtgas', and check likes/saves
-        post_dict = post.__dict__.copy()  # Get all fields dynamically
-        # Add dynamic relationships like 'username' (author) and 'hashtags'
+        post_dict = post.__dict__.copy()
         post_dict["username"] = post.author.username if post.author else None
         post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
 
-        # Update likes and comments count dynamically
         post.update_likes_and_comments_count(db)
 
-        # Check if the current user liked or saved the post
         if current_user:
             post_dict["is_liked"] = db.query(Like).filter(
                 Like.user_id == current_user.id,
                 Like.post_id == post.id
             ).first() is not None
-        
-     # Check if the user saved the post
+
             post_dict["is_saved"] = db.query(UserSavedPosts).filter(
                 UserSavedPosts.user_id == current_user.id,
                 UserSavedPosts.saved_post_id == post.id
@@ -155,7 +198,7 @@ async def get_user_posts_svc(
             post_dict["is_saved"] = False
 
         result.append(post_dict)
-        #Return the final paginated result
+
     return {
         "total_count": total_count,
         "page": page,
@@ -876,6 +919,7 @@ async def get_saved_posts_svc(
         Post.share_count,
         Post.visibility,
         User.username,
+        Post.comments_disabled
     ).join(Post, UserSavedPosts.saved_post_id == Post.id).join(User, Post.author_id == User.id).filter(
         UserSavedPosts.user_id == user_id,
         ~Post.author_id.in_(blocked_user_ids)
@@ -1026,30 +1070,111 @@ async def serialize_posts(posts, db: Session, current_user: User):
         result.append(post_dict)
     return result
 
-async def get_public_posts_svc(db: Session, current_user: User, page: int, limit: int, source: Optional[str] = None):
-    query = db.query(Post).filter(Post.visibility == "public", Post.author_id == current_user.id)
-    if source == "pix":
-      query = query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
-    elif source == "reels":
-      query = query.filter(func.lower(Post.media_type) == "video")
+async def get_public_posts_svc(db: Session, current_user: User, page: int, limit: int, source: Optional[str] = None): 
+    if source == "pouch":
+        query = db.query(Pouch).filter(Pouch.user_id == current_user.id, Pouch.visibility == "public")
+        query = query.order_by(desc(Pouch.id))
+        total_count = query.count()
+        pouches = query.offset((page - 1) * limit).limit(limit).all()
 
-    query = query.order_by(desc(Post.created_at))
-    total_count = query.count()
+        data = []
+        for pouch in pouches:
+            # Fetch related post IDs (ordered by insertion or creation time if needed)
+            pouch_posts = db.query(PouchPost).filter(PouchPost.pouch_id == pouch.id).limit(3).all()
+            
+            # Get image URLs from related posts
+            post_images = [
+                db.query(Post).filter(Post.id == pp.post_id).first().media
+                for pp in pouch_posts
+            ]
 
-    posts = query.offset((page - 1) * limit).limit(limit).all()
-    data = await serialize_posts(posts, db, current_user)
+            # Ensure exactly 3 slots in preview (fill empty if needed)
+            preview_slots = post_images[:3]
+            preview_slots += ["empty"] * (3 - len(preview_slots))
 
-    return {
-        "total_count": total_count,
-        "page": page,
-        "limit": limit,
-        "total_pages": (total_count + limit - 1) // limit,
-        "data": data,
-    }
+            data.append({
+                "pouch_id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "pouch_preview": preview_slots  # Exactly 3 items (URLs or 'empty')
+            })
 
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": data,
+        }
+    else:
+        query = db.query(Post).filter(Post.visibility == "public", Post.author_id == current_user.id)
+        if source == "pix":
+            query = query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
+        elif source == "reels":
+            query = query.filter(func.lower(Post.media_type) == "video")
 
-async def get_private_posts_svc(db: Session, current_user: User, page: int, limit: int, source: Optional[str] = None):
+        query = query.order_by(desc(Post.created_at))
+        total_count = query.count()
+
+        posts = query.offset((page - 1) * limit).limit(limit).all()
+        data = await serialize_posts(posts, db, current_user)
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": data,
+        }
+
+async def get_private_posts_svc(
+    db: Session, 
+    current_user: User, 
+    page: int, 
+    limit: int, 
+    source: Optional[str] = None
+):
+    if source == "pouch":
+        query = db.query(Pouch).filter(Pouch.user_id == current_user.id, Pouch.visibility == "private")
+        query = query.order_by(desc(Pouch.id))
+        total_count = query.count()
+
+        pouches = query.offset((page - 1) * limit).limit(limit).all()
+        data = []
+
+        for pouch in pouches:
+            # Fetch up to 3 related posts for the preview
+            pouch_posts = db.query(PouchPost).filter(PouchPost.pouch_id == pouch.id).limit(3).all()
+
+            # Get sample image URLs from related posts
+            post_images = [
+                db.query(Post).filter(Post.id == pp.post_id).first().media
+                for pp in pouch_posts
+            ]
+
+            # Ensure exactly 3 preview slots
+            preview_slots = post_images[:3] + ["empty"] * (3 - len(post_images))
+
+            data.append({
+                "pouch_id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "pouch_preview": preview_slots  # Always 3 items (URLs or "empty")
+            })
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": data,
+        }
+
+    # Handle regular posts for 'pix', 'reels', or None
     query = db.query(Post).filter(Post.author_id == current_user.id, Post.visibility == "private")
+
     if source == "pix":
         query = query.filter(func.lower(Post.media_type).in_(["image", "photo"]))
     elif source == "reels":
@@ -1125,17 +1250,94 @@ async def get_posts_by_visibility_svc(db: Session, current_user: User, visibilit
         print(f"Database error: {e}")
         return None
 
-async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: int):
+async def get_following_posts_svc(
+    db: Session, 
+    user_id: int, 
+    page: int, 
+    limit: int, 
+    source: str
+):
+    offset = (page - 1) * limit
+
+    if source == "pouch":
+        following_ids = [
+            f.following_id for f in db.query(Follow).filter(Follow.follower_id == user_id)
+        ]
+
+        query = (
+            db.query(Pouch, User.username)
+            .join(User, Pouch.user_id == User.id)
+            .filter(Pouch.user_id.in_(following_ids))
+            .filter(Pouch.visibility == "public")
+            .order_by(desc(Pouch.id))
+        )
+
+        total_count = query.count()
+
+        if offset >= total_count:
+            return {
+                "total_count": total_count,
+                "page": page,
+                "limit": limit,
+                "total_pages": (total_count + limit - 1) // limit,
+                "data": [],
+            }
+
+        pouches = query.offset(offset).limit(limit).all()
+        data = []
+
+        for pouch, username in pouches:
+            # Fetch up to 3 related posts for the preview
+            pouch_posts = (
+                db.query(PouchPost)
+                .filter(PouchPost.pouch_id == pouch.id)
+                .limit(3)
+                .all()
+            )
+
+            post_images = [
+                db.query(Post).filter(Post.id == pp.post_id).first().media
+                for pp in pouch_posts
+            ]
+
+            # Ensure exactly 3 slots in preview layout
+            preview_slots = post_images[:3] + ["empty"] * (3 - len(post_images))
+
+            data.append({
+                "pouch_id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "owner_id": pouch.user_id,
+                "username": username,
+                "pouch_preview": preview_slots  # Always 3 items (URLs or 'empty')
+            })
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": data,
+        }
+
+    # ✅ Regular Posts Section
+    if source == "pix":
+        media_filter = func.lower(Post.media_type).in_(["image", "photo"])
+    elif source == "reels":
+        media_filter = func.lower(Post.media_type) == "video"
+    else:
+        media_filter = func.lower(Post.media_type).in_(["image", "photo", "video"])
+
     total_count = (
         db.query(Post)
         .join(Follow, Follow.following_id == Post.author_id)
         .filter(Follow.follower_id == user_id)
-        .filter((Post.visibility != "private") | (Post.author_id == user_id))  # Exclude private unless it's the user's post
-        .filter(Post.media_type == "video")
+        .filter((Post.visibility != "private") | (Post.author_id == user_id))
+        .filter(media_filter)
         .count()
     )
 
-    offset = (page - 1) * limit
     if offset >= total_count:
         return {
             "total_count": total_count,
@@ -1150,8 +1352,8 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         .join(User, Post.author_id == User.id)
         .join(Follow, Follow.following_id == Post.author_id)
         .filter(Follow.follower_id == user_id)
-        .filter((Post.visibility != "private") | (Post.author_id == user_id))  # Exclude private unless it's the user's post
-        .filter(Post.media_type == "video")
+        .filter((Post.visibility != "private") | (Post.author_id == user_id))
+        .filter(media_filter)
         .order_by(desc(Post.created_at))
         .offset(offset)
         .limit(limit)
@@ -1160,13 +1362,17 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
 
     result = []
     for post, username in posts:
-        post_dict = post.__dict__.copy()  # Get all fields dynamically
+        post_dict = post.__dict__.copy()
         post_dict["username"] = username
         post_dict["hashtags"] = [hashtag.name for hashtag in post.hashtags] if post.hashtags else []
 
-        # Compute dynamic flags
-        post_dict["is_liked"] = db.query(Like).filter(Like.user_id == user_id, Like.post_id == post.id).first() is not None
-        post_dict["is_saved"] = db.query(UserSavedPosts).filter(UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id== post.id).first() is not None
+        post_dict["is_liked"] = db.query(Like).filter(
+            Like.user_id == user_id, Like.post_id == post.id
+        ).first() is not None
+
+        post_dict["is_saved"] = db.query(UserSavedPosts).filter(
+            UserSavedPosts.user_id == user_id, UserSavedPosts.saved_post_id == post.id
+        ).first() is not None
 
         result.append(post_dict)
 
@@ -1176,7 +1382,10 @@ async def get_following_posts_svc(db: Session, user_id: int, page: int, limit: i
         "limit": limit,
         "total_pages": (total_count + limit - 1) // limit,
         "data": result,
-    }  
+    }
+
+
+
 
 async def search_hashtags_svc(query: str, db: Session, page: int, limit: int, source: Optional[str] = None):
     offset = (page - 1) * limit
