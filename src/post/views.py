@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
 from fastapi.responses import StreamingResponse
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest,PouchCreateRequest,PouchUpdateRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest,PouchCreateRequest,PouchUpdateRequest,PouchPreviewRequest
 from src.models.post import Post,post_likes, Category, Pouch, PouchPost,UserSavedPosts
 from src.models.user import UserCategory
 from azure.storage.blob import BlobServiceClient
@@ -1034,29 +1034,14 @@ async def delete_all_comments(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
-@router.post("/pouches")
-async def create_pouch(
-    request: PouchCreateRequest,
+    
+@router.post("/pouches/preview-related-images")
+async def preview_related_images(
+    request: PouchPreviewRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Create the pouch
-    pouch = Pouch(
-        name=request.name,
-        description=request.description,
-        visibility=request.visibility,
-        user_id=current_user.id
-    )
-    db.add(pouch)
-    db.flush()
-    if request.post_ids:
-       for post_id in request.post_ids:
-        db.add(PouchPost(pouch_id=pouch.id, post_id=post_id))
-
-    db.commit()
-
-    # 🔍 First, try exact match
+    # 🔍 First, try exact match for category_of_content matching pouch name
     related_posts = (
         db.query(Post)
         .filter(Post.category_of_content.ilike(request.name))
@@ -1071,21 +1056,53 @@ async def create_pouch(
             .all()
         )
 
-    # Prepare response
     related_images = [
-    {
-        "post_id": post.id,
-        "media_url": post.media,
-        "selected": post.id in request.post_ids if request.post_ids else False
-    }
-    for post in related_posts
-]
+        {
+            "post_id": post.id,
+            "media_url": post.media,
+            "selected": post.id in request.post_ids
+        }
+        for post in related_posts
+    ]
 
     return {
         "success": True,
-        "message": "Pouch created",
-        "pouch_id": pouch.id,
-        "related_images": related_images
+        "message": "Related images fetched successfully.",
+        "related_images": related_images,
+        "pouch_details": {
+            "name": request.name,
+            "description": request.description,
+            "visibility": request.visibility
+        }
+    }
+
+@router.post("/pouches")
+async def create_pouch(
+    request: PouchCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Create the pouch with provided details
+    pouch = Pouch(
+        name=request.name,
+        description=request.description,
+        visibility=request.visibility,
+        user_id=current_user.id
+    )
+    db.add(pouch)
+    db.flush()  # Get pouch.id before inserting related posts
+
+    # Add selected posts if any
+    if request.post_ids:
+        for post_id in request.post_ids:
+            db.add(PouchPost(pouch_id=pouch.id, post_id=post_id))
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Pouch created successfully.",
+        "pouch_id": pouch.id
     }
 
 

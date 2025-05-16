@@ -135,10 +135,17 @@ class DeleteAllCommentsRequest(BaseModel):
     post_id: int
     disable_comments: bool = False  # Optional, defaults to False if not provided
 
+class PouchPreviewRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    visibility: VisibilityEnum
+    post_ids: Optional[List[int]] = []    # For pre-selecting posts if needed
+
+
 class PouchCreateRequest(BaseModel):
     name: str
-    description: str
-    visibility: VisibilityEnum
+    description: Optional[str]
+    visibility: Optional[VisibilityEnum]
     post_ids:Optional[List[int]]
 
 class PouchUpdateRequest(BaseModel):
