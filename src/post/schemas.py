@@ -154,3 +154,6 @@ class PouchUpdateRequest(BaseModel):
     visibility: Optional[VisibilityEnum] = None
     new_post_ids: Optional[List[int]] = None
     remove_post_ids: Optional[List[int]]
+
+class PouchRequest(BaseModel):
+    pouch_id: int

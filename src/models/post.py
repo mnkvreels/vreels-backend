@@ -165,12 +165,67 @@ class Pouch(Base):
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     visibility = Column(Enum(VisibilityEnum), nullable=False, default="private")
+    location = Column(String, nullable=True) 
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+    # ✅ Add this:
+    likes_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0)
+    save_count = Column(Integer, default=0)
 
     user = relationship("User", back_populates="pouches")
     pixs = relationship("Post", secondary="pouch_posts", back_populates="pouches")
+    likes = relationship("PouchLike", back_populates="pouch", cascade="all, delete-orphan")
+    comments = relationship("PouchComment", back_populates="pouch", cascade="all, delete-orphan")
+    saved_by = relationship("UserSavedPouch", back_populates="pouch", cascade="all, delete-orphan")
 
 class PouchPost(Base):
     __tablename__ = "pouch_posts"
     id = Column(Integer, primary_key=True, index=True)
     pouch_id = Column(Integer, ForeignKey("pouches.id"))
     post_id = Column(Integer, ForeignKey("posts.id"))
+
+
+class PouchLike(Base):
+    __tablename__ = "pouch_likes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    pouch_id = Column(Integer, ForeignKey("pouches.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+    user = relationship("User")
+    pouch = relationship("Pouch", back_populates="likes")
+
+class PouchComment(Base):
+    __tablename__ = "pouch_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    pouch_id = Column(Integer, ForeignKey("pouches.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    report_count = Column(Integer, default=0)
+
+    user = relationship("User")
+    pouch = relationship("Pouch", back_populates="comments")
+    
+
+class UserSavedPouch(Base):
+    __tablename__ = "user_saved_pouches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    saved_pouch_id = Column(Integer, ForeignKey("pouches.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+    # Optional snapshot metadata
+    content = Column(String)
+    media = Column(String)
+    location = Column(String)
+    likes_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0)
+    share_count = Column(Integer, default=0)
+
+    user = relationship("User")
+    pouch = relationship("Pouch", back_populates="saved_by")

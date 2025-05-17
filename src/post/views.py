@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
 from fastapi.responses import StreamingResponse
-from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest,PouchCreateRequest,PouchUpdateRequest,PouchPreviewRequest
+from .schemas import PostCreate, SavePostRequest, SharePostRequest, MediaInteractionRequest, PostUpdate, CommentDeleteRequest, PostResponse, SeedPexelsRequest, DeleteAllCommentsRequest,PouchCreateRequest,PouchUpdateRequest, PouchRequest,PouchPreviewRequest
 from src.models.post import Post,post_likes, Category, Pouch, PouchPost,UserSavedPosts
 from src.models.user import UserCategory
 from azure.storage.blob import BlobServiceClient
@@ -51,7 +51,8 @@ from .service import (
     search_users_svc,
     get_user_liked_posts_svc,
     delete_comments_svc,
-    delete_all_comments_and_toggle_disable
+    delete_all_comments_and_toggle_disable, like_pouch_svc, get_pouch_from_pouch_id_svc, unlike_pouch_svc,
+    comment_on_pouch_svc, save_pouch_svc, unsave_pouch_svc
 
 )
 from ..profile.service import get_followers_svc
@@ -89,6 +90,13 @@ class PostRequest(BaseModel):
 class CommentRequest(BaseModel):
     post_id: int
     content: str
+
+class PouchCommentRequest(BaseModel):
+    pouch_id: int
+    content: str
+
+class SavePouchRequest(BaseModel):
+    pouch_id: int
     
 # Regex pattern to check if a string is a valid URL
 URL_PATTERN = re.compile(r'^(http|https):\/\/[^\s]+$')
@@ -1247,3 +1255,106 @@ async def get_pouch_posts(
         "total_pages": (total_count + limit - 1) // limit,
         "data": result,
     }
+
+
+
+@router.post("/pouch/like", status_code=status.HTTP_200_OK)
+async def like_pouch(
+    request: PouchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Perform like action
+    res = await like_pouch_svc(db, request.pouch_id, current_user)
+
+    # Get pouch details and notify the owner
+    #pouch = db.query(Pouch).options(joinedload(Pouch.user)).filter(Pouch.id == request.pouch_id).first()
+    pouch = await get_pouch_from_pouch_id_svc(db, current_user, pouch_id=request.pouch_id)
+
+    if pouch and pouch["user_id"] != current_user.id:
+        receiver_devices = db.query(UserDevice).filter(UserDevice.user_id == pouch["user_id"]).all()
+
+        for device in receiver_devices:
+            if device.notify_likes:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="❤️ New Like on Your Pouch!",
+                        message=f"{current_user.username} liked your pouch.",
+                    )
+                except Exception as e:
+                    print(f"Notification failed for device {device.device_id}: {e}")
+
+    return res
+
+
+@router.post("/pouch/unlike", status_code=status.HTTP_200_OK)
+async def unlike_pouch(
+    request: PouchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    res, detail = await unlike_pouch_svc(db, request.pouch_id, current_user.username)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    return {"message": "Unliked the pouch"}
+
+
+@router.post("/pouch/comment", status_code=status.HTTP_201_CREATED)
+async def comment_on_pouch(
+    request: PouchCommentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user = current_user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You are not authorized."
+        )
+
+    res, detail = await comment_on_pouch_svc(db, request.pouch_id, user.id, request.content)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    # Notify pouch owner (if not commenting on own pouch)
+    pouch = await get_pouch_from_pouch_id_svc(db, user, pouch_id=request.pouch_id)
+    if pouch and pouch["user_id"] != user.id:
+        devices_to_notify = db.query(UserDevice).filter(
+            UserDevice.user_id == pouch["user_id"],
+            UserDevice.notify_comments == True
+        ).all()
+
+        for device in devices_to_notify:
+            if device.device_token and device.platform:
+                try:
+                    await send_push_notification(
+                        device_token=device.device_token,
+                        platform=device.platform,
+                        title="💬 New Comment on Your Pouch!",
+                        message=f"{user.username} commented: {request.content}"
+                    )
+                except Exception as e:
+                    print(f"Notification send failed for device {device.device_id}: {e}")
+
+    return {"message": "Comment added successfully"}
+
+
+@router.post("/savepouch", status_code=status.HTTP_201_CREATED)
+async def save_pouch(
+    request: SavePouchRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    return await save_pouch_svc(db, current_user.id, request.pouch_id)
+
+
+
+@router.post("/unsavepouch", status_code=status.HTTP_200_OK)
+async def unsave_pouch(
+    request: SavePouchRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    return await unsave_pouch_svc(db, current_user.id, request.pouch_id)

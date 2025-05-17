@@ -10,6 +10,7 @@ class Activity(Base):
     timestamp = Column(DateTime, nullable=False, default=datetime.now(timezone.utc))
 
     liked_post_id = Column(Integer)   # ID of liked post (if applicable)
+    liked_pouch_id = Column(Integer)
     commented_post_id = Column(Integer)   # ID of commented post (if applicable)
 
     username_like = Column(String)  # User who liked the post
