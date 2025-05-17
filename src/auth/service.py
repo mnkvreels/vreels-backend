@@ -505,7 +505,7 @@ async def delete_account_svc(db: Session, user_id: int) -> bool:
         if pouch_ids:
             db.query(PouchLike).filter(PouchLike.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
             db.query(PouchComment).filter(PouchComment.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
-            db.query(UserSavedPouch).filter(UserSavedPouch.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
+            db.query(UserSavedPouch).filter(UserSavedPouch.saved_pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
             db.query(PouchPost).filter(PouchPost.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
 
         # 4. Delete User-Related Association Tables
