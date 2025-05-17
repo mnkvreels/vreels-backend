@@ -12,7 +12,7 @@ from ..models.post import Post, Hashtag, post_hashtags, Comment, UserSavedPosts,
 from ..models.report import ReportPost
 from ..models.user import User, Follow, FollowRequest, BlockedUsers
 from ..auth.schemas import User as UserSchema
-from ..models.post import VisibilityEnum
+from ..models.post import VisibilityEnum, PouchLike, PouchComment, UserSavedPouch
 from ..models.activity import Activity
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
@@ -832,7 +832,7 @@ async def save_post_svc(db: Session, user_id: int, post_id: int):
         visibility=post.visibility,
     )
     db.add(saved_post)
-    if post and post.save_count is not None and post.save_count > 0:
+    if post and post.save_count is not None and post.save_count >= 0:
         post.save_count += 1
     db.commit()
     db.refresh(saved_post)
@@ -875,6 +875,44 @@ async def get_saved_posts_svc(
     ).union(
         row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == user_id)
     )
+
+    if source == "pouch":
+        query = db.query(Pouch).join(UserSavedPouch).filter(
+            UserSavedPouch.user_id == user_id,
+            Pouch.visibility == "public",
+            ~Pouch.user_id.in_(blocked_user_ids)
+        ).order_by(desc(Pouch.id))
+
+        total_count = query.count()
+        pouches = query.offset(offset).limit(limit).all()
+
+        result = []
+        for pouch in pouches:
+            # Get up to 3 media URLs from pouch_posts → posts
+            pouch_posts = db.query(PouchPost).filter(PouchPost.pouch_id == pouch.id).limit(3).all()
+            media_list = []
+            for pp in pouch_posts:
+                post = db.query(Post).filter(Post.id == pp.post_id).first()
+                if post:
+                    media_list.append(post.media)
+            media_list += ["empty"] * (3 - len(media_list))
+
+            result.append({
+                "pouch_id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "pouch_preview": media_list[:3],
+                "is_saved": True,
+            })
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": result,
+        }
 
     # Base count query
     count_query = db.query(UserSavedPosts).join(Post, UserSavedPosts.saved_post_id == Post.id).filter(
@@ -1612,12 +1650,52 @@ async def get_user_liked_posts_svc(
     limit: int, 
     source: Optional[str] = None  # ✅ Added source parameter
 ) -> dict:
+    
+    offset = (page - 1) * limit
     # 🔒 Get all blocked or blocking users
     blocked_user_ids = set(
         row[0] for row in db.query(BlockedUsers.blocked_id).filter(BlockedUsers.blocker_id == user_id)
     ).union(
         row[0] for row in db.query(BlockedUsers.blocker_id).filter(BlockedUsers.blocked_id == user_id)
     )
+
+    if source == "pouch":
+        query = db.query(Pouch).join(PouchLike).filter(
+            PouchLike.user_id == user_id,
+            Pouch.visibility == "public",
+            ~Pouch.user_id.in_(blocked_user_ids)
+        ).order_by(desc(Pouch.id))
+
+        total_count = query.count()
+        pouches = query.offset(offset).limit(limit).all()
+
+        result = []
+        for pouch in pouches:
+            pouch_posts = db.query(PouchPost).filter(PouchPost.pouch_id == pouch.id).limit(3).all()
+            media_list = []
+            for pp in pouch_posts:
+                post = db.query(Post).filter(Post.id == pp.post_id).first()
+                if post:
+                    media_list.append(post.media)
+            media_list += ["empty"] * (3 - len(media_list))
+
+            result.append({
+                "pouch_id": pouch.id,
+                "name": pouch.name,
+                "description": pouch.description,
+                "visibility": pouch.visibility,
+                "pouch_preview": media_list[:3],
+                "is_liked": True,
+            })
+
+        return {
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+            "data": result,
+        }
+
 
     # Base count query
     count_query = db.query(func.count(Post.id)).join(
@@ -1710,3 +1788,267 @@ async def delete_all_comments_and_toggle_disable(
     db.commit()
     return True
 
+
+async def like_pouch_svc(db: Session, pouch_id: int, current_user: User):
+    pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found")
+
+    # Check if already liked
+    existing_like = db.query(PouchLike).filter_by(user_id=current_user.id, pouch_id=pouch_id).first()
+    if existing_like:
+        return {"message": "You have already liked this pouch."}
+
+    # Create like entry
+    like = PouchLike(user_id=current_user.id, pouch_id=pouch_id)
+    db.add(like)
+
+    # Increment like count (optional if tracked)
+    pouch.likes_count = (pouch.likes_count or 0) + 1
+
+    # Optional: Add activity tracking
+    activity = Activity(
+        username=pouch.user.username,
+        liked_pouch_id=pouch.id,
+        username_like=current_user.username
+    )
+    db.add(activity)
+
+    db.commit()
+    return {"message": "Pouch liked successfully."}
+
+
+
+async def get_pouch_from_pouch_id_svc(
+    db: Session,
+    current_user: User,
+    pouch_id: int,
+    page: int = 1,
+    limit: int = 6
+) -> dict:
+    offset = (page - 1) * limit
+
+    pouch_query = (
+        db.query(Pouch)
+        .options(joinedload(Pouch.user))
+        .filter(Pouch.id == pouch_id)
+        .first()
+    )
+
+    if not pouch_query:
+        return None
+
+    # Likes metadata
+    total_likes_count = db.query(func.count(PouchLike.id)).filter(PouchLike.pouch_id == pouch_id).scalar()
+    total_likes_pages = max(1, math.ceil(total_likes_count / limit))
+
+    likes_query = (
+        db.query(PouchLike)
+        .options(joinedload(PouchLike.user))
+        .filter(PouchLike.pouch_id == pouch_id)
+        .order_by(desc(PouchLike.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    # Comments metadata
+    total_comments_count = db.query(func.count(PouchComment.id)).filter(PouchComment.pouch_id == pouch_id).scalar()
+    total_comments_pages = max(1, math.ceil(total_comments_count / limit))
+
+    comments_query = (
+        db.query(PouchComment)
+        .options(joinedload(PouchComment.user))
+        .filter(PouchComment.pouch_id == pouch_id)
+        .order_by(desc(PouchComment.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    # is_liked and is_saved
+    is_liked = db.query(PouchLike).filter_by(user_id=current_user.id, pouch_id=pouch_id).first() is not None
+    is_saved = db.query(UserSavedPouch).filter_by(user_id=current_user.id, saved_pouch_id=pouch_id).first() is not None
+
+    pouch_response = {
+        "id": pouch_query.id,
+        "name": pouch_query.name,
+        "description": pouch_query.description,
+        "user_id": pouch_query.user_id,
+        "username": pouch_query.user.username,
+        "visibility": pouch_query.visibility.value,
+        #"created_at": pouch_query.created_at,
+        "is_liked": is_liked,
+        "is_saved": is_saved,
+        "likes": {
+            "metadata": {
+                "total_count": total_likes_count,
+                "total_pages": total_likes_pages,
+                "current_page": page,
+                "limit": limit
+            },
+            "items": [
+                {
+                    "user_id": like.user.id,
+                    "username": like.user.username,
+                    "profile_pic": like.user.profile_pic,
+                    "created_at": like.created_at
+                }
+                for like in likes_query
+            ]
+        },
+        "comments": {
+            "metadata": {
+                "total_count": total_comments_count,
+                "total_pages": total_comments_pages,
+                "current_page": page,
+                "limit": limit
+            },
+            "items": [
+                {
+                    "id": comment.id,
+                    "content": comment.content,
+                    "created_at": comment.created_at,
+                    "user_id": comment.user.id,
+                    "username": comment.user.username,
+                    "profile_pic": comment.user.profile_pic,
+                    "pouch_id": comment.pouch_id
+                }
+                for comment in comments_query
+            ]
+        }
+    }
+
+    return pouch_response
+
+
+
+async def unlike_pouch_svc(db: Session, pouch_id: int, username: str):
+    # Get the pouch
+    pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+    if not pouch:
+        return False, "Invalid pouch_id"
+
+    # Get the user
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return False, "Invalid username"
+
+    # Check if already not liked
+    existing_like = db.query(PouchLike).filter_by(pouch_id=pouch_id, user_id=user.id).first()
+    if not existing_like:
+        return False, "Already not liked"
+
+    # Delete like record
+    db.delete(existing_like)
+
+    # Decrement likes_count safely
+    pouch.likes_count = max((pouch.likes_count or 0) - 1, 0)
+
+    db.commit()
+    return True, "Unliked successfully"
+
+
+async def comment_on_pouch_svc(db: Session, pouch_id: int, user_id: int, content: str):
+    pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+    if not pouch:
+        return False, "Invalid pouch_id"
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return False, "Invalid user_id"
+
+    # Create the comment
+    comment = PouchComment(
+        content=content,
+        pouch_id=pouch_id,
+        user_id=user_id,
+        created_at=datetime.now()
+    )
+    db.add(comment)
+    pouch.comments_count = (pouch.comments_count or 0) + 1
+
+    # Add comment activity
+    activity = Activity(
+        username=pouch.user.username,
+        commented_post_id=None,
+        username_like=user.username,
+        commented_media=None  # Or pouch preview image if you store one
+    )
+    db.add(activity)
+
+    db.commit()
+    return True, "Comment added"
+
+
+async def save_pouch_svc(db: Session, user_id: int, pouch_id: int):
+    # Check if already saved
+    existing_entry = db.query(UserSavedPouch).filter(
+        UserSavedPouch.user_id == user_id,
+        UserSavedPouch.saved_pouch_id == pouch_id
+    ).first()
+    if existing_entry:
+        raise HTTPException(status_code=400, detail="Pouch already saved.")
+
+    # Fetch the pouch
+    pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found.")
+
+    # ✅ Fetch first post’s media linked to this pouch
+    pouch_post = (
+        db.query(PouchPost)
+        .filter(PouchPost.pouch_id == pouch_id)
+        .order_by(PouchPost.id.asc())  # earliest added
+        .first()
+    )
+
+    media_url = None
+    if pouch_post:
+        post = db.query(Post).filter(Post.id == pouch_post.post_id).first()
+        media_url = post.media if post else None
+
+    # Save pouch
+    saved_pouch = UserSavedPouch(
+        user_id=user_id,
+        saved_pouch_id=pouch.id,
+        content=pouch.description,
+        media=media_url,
+        location=pouch.location,
+        created_at=pouch.created_at,
+        likes_count=pouch.likes_count,
+        comments_count=pouch.comments_count,
+        share_count=0
+    )
+    db.add(saved_pouch)
+
+    # Update save count
+    pouch.save_count = (pouch.save_count or 0) + 1
+
+    db.commit()
+    db.refresh(saved_pouch)
+
+    return {"message": "Pouch saved successfully"}
+
+
+async def unsave_pouch_svc(db: Session, user_id: int, pouch_id: int):
+    # Find the saved pouch entry
+    saved_pouch = db.query(UserSavedPouch).filter(
+        UserSavedPouch.user_id == user_id,
+        UserSavedPouch.saved_pouch_id == pouch_id
+    ).first()
+
+    if not saved_pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found in saved list.")
+
+    # Delete the saved entry
+    db.delete(saved_pouch)
+
+    # Decrement the save_count on the pouch
+    pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+    if pouch and pouch.save_count is not None and pouch.save_count > 0:
+        pouch.save_count -= 1
+        db.add(pouch)
+
+    db.commit()
+    return {"message": "Pouch unsaved successfully"}

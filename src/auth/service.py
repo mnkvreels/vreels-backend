@@ -15,7 +15,7 @@ from datetime import timedelta, datetime, timezone
 from src.database import get_db
 from ..models.user import User, BlockedUsers, OTP, Follow, UserDevice, FollowRequest,UserDeviceContact
 from ..models.report import ReportUser, ReportPost, ReportComment,UserAppReport
-from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction,post_likes
+from ..models.post import Post, Like, Comment, UserSavedPosts, UserSharedPosts, post_hashtags,MediaInteraction,post_likes,Pouch, PouchPost,PouchComment,PouchLike,UserSavedPouch
 from ..models.activity import Activity
 from .schemas import UserCreate, UserUpdate, UserIdRequest
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND, HTTP_503_SERVICE_UNAVAILABLE
@@ -478,19 +478,16 @@ async def delete_account_svc(db: Session, user_id: int) -> bool:
         # Pre-fetch IDs
         post_ids = [p.id for p in db.query(Post).filter(Post.author_id == user_id).all()]
         comment_ids = [c.id for c in db.query(Comment).filter(Comment.user_id == user_id).all()]
+        pouch_ids = [p.id for p in db.query(Pouch).filter(Pouch.user_id == user_id).all()]
 
         # 1. Delete Comment Dependencies
         if comment_ids:
-            print(f"Deleting Report Comments for user_id: {user_id}")
             db.query(ReportComment).filter(ReportComment.comment_id.in_(comment_ids)).delete(synchronize_session=False)
 
         # 2. Delete Post Dependencies
         if post_ids:
             placeholders = ", ".join(str(pid) for pid in post_ids)
-            print(f"Deleting NSFW detections for posts: {placeholders}")
             db.execute(text(f"DELETE FROM nsfw_detection WHERE post_id IN ({placeholders})"))
-
-            print("Deleting related post data...")
             db.query(ReportPost).filter(ReportPost.post_id.in_(post_ids)).delete(synchronize_session=False)
             db.query(MediaInteraction).filter(MediaInteraction.post_id.in_(post_ids)).delete(synchronize_session=False)
             db.query(Comment).filter(Comment.post_id.in_(post_ids)).delete(synchronize_session=False)
@@ -499,9 +496,19 @@ async def delete_account_svc(db: Session, user_id: int) -> bool:
             db.query(post_likes).filter(post_likes.c.post_id.in_(post_ids)).delete(synchronize_session=False)
             db.query(UserSavedPosts).filter(UserSavedPosts.saved_post_id.in_(post_ids)).delete(synchronize_session=False)
             db.execute(text(f"DELETE FROM bookmarks WHERE post_id IN ({placeholders})"))
+            # ✅ Delete shared posts associated with posts
+            db.query(UserSharedPosts).filter(UserSharedPosts.post_id.in_(post_ids)).delete(synchronize_session=False)
+            # ✅ Delete pouch-post associations
+            db.query(PouchPost).filter(PouchPost.post_id.in_(post_ids)).delete(synchronize_session=False)
 
-        # 3. Delete User-Related Association Tables
-        print(f"Deleting user-related data for user_id: {user_id}")
+        # 3. Delete Pouch Dependencies
+        if pouch_ids:
+            db.query(PouchLike).filter(PouchLike.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
+            db.query(PouchComment).filter(PouchComment.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
+            db.query(UserSavedPouch).filter(UserSavedPouch.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
+            db.query(PouchPost).filter(PouchPost.pouch_id.in_(pouch_ids)).delete(synchronize_session=False)
+
+        # 4. Delete User-Related Association Tables
         db.query(UserSharedPosts).filter(
             (UserSharedPosts.sender_user_id == user_id) |
             (UserSharedPosts.receiver_user_id == user_id)
@@ -532,20 +539,21 @@ async def delete_account_svc(db: Session, user_id: int) -> bool:
         db.query(UserDevice).filter(UserDevice.user_id == user_id).delete(synchronize_session=False)
         db.query(UserDeviceContact).filter(UserDeviceContact.user_device_id == user_id).delete(synchronize_session=False)
         db.query(OTP).filter(OTP.user_id == user_id).delete(synchronize_session=False)
+        db.query(UserSavedPouch).filter(UserSavedPouch.user_id == user_id).delete(synchronize_session=False)
+        db.query(PouchLike).filter(PouchLike.user_id == user_id).delete(synchronize_session=False)
+        db.query(PouchComment).filter(PouchComment.user_id == user_id).delete(synchronize_session=False)
 
-        # 4. Delete Posts and Comments
-        print("Deleting Posts and Comments...")
+        # 5. Delete Posts, Comments, and Pouches Owned by User
         db.query(Post).filter(Post.author_id == user_id).delete(synchronize_session=False)
         db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
+        db.query(Pouch).filter(Pouch.user_id == user_id).delete(synchronize_session=False)
 
-        # 5. Finally, Delete User
-        print(f"Deleting user record for user_id: {user_id}")
+        # 6. Finally, Delete User
         db.delete(user)
 
         # Commit all deletions
         db.commit()
         print(f"✅ Account deletion completed for user_id: {user_id}")
-
         return True
 
     except Exception as e:
