@@ -12,12 +12,14 @@ from src.models.post import Post,Category
 from typing import List
 from datetime import timedelta, datetime, timezone
 from .enums import AccountTypeEnum, GenderEnum
+from datetime import date
+from starlette.requests import Request
 from ..azure_blob import upload_to_azure_blob,blob_service_client, AZURE_IMAGE_CONTAINER
 
 from src.auth.service import (
     get_current_user,
     authenticate,
-    update_user as update_user_svc,
+    update_user_svc,
     existing_user,
     create_user as create_user_svc,
     create_access_token,
@@ -141,32 +143,49 @@ async def profile(current_user: User = Depends(get_current_user), db: Session = 
 #     await update_user_svc(db, db_user, user_update)
 #     return {"message": "Profile updated successfully."}
 
+from fastapi import Request
+
 @router.put("/profile")
 async def update_profile(
-    name: str = Form(None),
-    bio: str = Form(None),
-    dob: str = Form(None),
-    email: str = Form(None),
-    gender: GenderEnum = Form(None),
-    location: str = Form(None),
-    account_type: AccountTypeEnum = Form(None),
+    request: Request,
     profile_pic: UploadFile = File(None),  # Accept profile picture
     current_user: User = Depends(get_current_user), 
     db: Session = Depends(get_db)
 ):
-    # Create a UserUpdate object
-    user_update = UserUpdate(
-        username=current_user.username,
-        name=name,
-        bio=bio,
-        dob=dob,
-        email = email,
-        gender=gender,
-        location=location,
-        account_type= account_type
-    )
+    form = await request.form()
 
-    # Check if a new profile pic is uploaded
+    # Get values if they exist in form
+    bio = form.get("bio") if "bio" in form else None
+    email = form.get("email") if "email" in form else None
+    name = form.get("name") if "name" in form else None
+    dob = form.get("dob") if "dob" in form else None
+    gender = form.get("gender") if "gender" in form else None
+    location = form.get("location") if "location" in form else None
+    account_type = form.get("account_type") if "account_type" in form else None
+
+    # Parse dob
+    parsed_dob = None
+    if dob:
+        try:
+            parsed_dob = date.fromisoformat(dob)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
+
+    user_update_data = {
+        "bio": bio,
+        "email": email,
+        "name": name,
+        "dob": parsed_dob,
+        "gender": gender,
+        "location": location,
+        "account_type": account_type,
+        "username": current_user.username,
+    }
+
+    filtered_data = {k: v for k, v in user_update_data.items() if v is not None}
+
+    user_update = UserUpdate(**filtered_data)
+
     if profile_pic:
         # Upload to Azure and get the URL
         new_profile_pic_url, media_type, thumbnail_url = await upload_to_azure_blob(
