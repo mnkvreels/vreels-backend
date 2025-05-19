@@ -52,7 +52,7 @@ from .service import (
     get_user_liked_posts_svc,
     delete_comments_svc,
     delete_all_comments_and_toggle_disable, like_pouch_svc, get_pouch_from_pouch_id_svc, unlike_pouch_svc,
-    comment_on_pouch_svc, save_pouch_svc, unsave_pouch_svc
+    comment_on_pouch_svc, save_pouch_svc, unsave_pouch_svc, get_comments_for_pouch_svc
 
 )
 from ..profile.service import get_followers_svc
@@ -1358,3 +1358,18 @@ async def unsave_pouch(
     current_user=Depends(get_current_user)
 ):
     return await unsave_pouch_svc(db, current_user.id, request.pouch_id)
+
+
+@router.get("/pouchcomments")
+async def get_comments_for_pouch(
+    page: int,
+    limit: int,
+    request: PouchRequest,  # should include pouch_id
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    comments = await get_comments_for_pouch_svc(db, current_user, request.pouch_id, page, limit)
+    if not comments:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
+
+    return comments
