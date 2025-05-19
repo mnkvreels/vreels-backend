@@ -54,6 +54,34 @@ class ReportComment(Base):
         UniqueConstraint("comment_id", "reported_by", name="uix_comment_report"),
     )
 
+class ReportPouch(Base):
+    __tablename__ = "report_pouches"
+    id = Column(Integer, primary_key=True)
+    pouch_id = Column(Integer, ForeignKey("pouches.id", ondelete="CASCADE"), nullable=False)
+    reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
+    report_reason = Column(NVARCHAR(255), nullable=True)
+    description = Column(NVARCHAR(256), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("pouch_id", "reported_by", name="uix_pouch_report"),
+    )
+
+class ReportPouchComment(Base):
+    __tablename__ = "report_pouch_comments"
+    id = Column(Integer, primary_key=True)
+    comment_id = Column(Integer, ForeignKey("pouch_comments.id", ondelete="CASCADE"), nullable=False)
+    reported_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    report_reason_id = Column(Integer, ForeignKey("report_reasons.report_reason_id"), nullable=True)
+    report_reason = Column(NVARCHAR(255), nullable=True)
+    description = Column(NVARCHAR(256), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("comment_id", "reported_by", name="uix_pouch_comment_report"),
+    )
+
 class UserAppReport(Base):
     __tablename__ = "user_app_reports"
 
