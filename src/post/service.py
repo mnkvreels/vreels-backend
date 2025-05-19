@@ -1731,6 +1731,7 @@ async def get_user_liked_posts_svc(
 
             data.append({
                 "id": like_entry.id,  # ID from pouch_likes table
+                "pouch_id": pouch.id,
                 "content": pouch.description,
                 "location": pouch.location,
                 "author_id": pouch.user_id,
