@@ -229,17 +229,23 @@ async def update_user_svc(db: Session, db_user: User, user_update: UserUpdate):
     Fields that are not provided will remain unchanged.
     """
     # db_user.bio = user_update.bio or db_user.bio
-    db_user.name = user_update.name or db_user.name
+    # db_user.name = user_update.name or db_user.name
     db_user.dob = user_update.dob or db_user.dob
     db_user.gender = user_update.gender or db_user.gender
-    db_user.email = user_update.email or db_user.email
-    db_user.location = user_update.location or db_user.location
+    # db_user.email = user_update.email or db_user.email
+    # db_user.location = user_update.location or db_user.location
     db_user.account_type = user_update.account_type or db_user.account_type
     db_user.profile_pic = user_update.profile_pic or db_user.profile_pic
     db_user.username = user_update.username or db_user.username
     
     if user_update.bio is not None:
         db_user.bio = user_update.bio
+    if user_update.name is not None:
+        db_user.name = user_update.name
+    if user_update.email is not None:
+        db_user.email = user_update.email
+    if user_update.location is not None:
+        db_user.location = user_update.location
 
     db.commit()
     db.refresh(db_user)  # Refresh the user instance to get updated data
