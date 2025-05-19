@@ -10,7 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func,select,insert,desc
-from src.models.post import Like,Comment
+from src.models.post import Like,Comment, PouchComment
 from pydantic import BaseModel
 from datetime import *
 from ..database import get_db
@@ -1373,3 +1373,78 @@ async def get_comments_for_pouch(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No comments found")
 
     return comments
+
+@router.delete("/pouches/{pouch_id}", status_code=status.HTTP_200_OK)
+async def delete_pouch(
+    pouch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    pouch = db.query(Pouch).filter_by(id=pouch_id, user_id=current_user.id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found or not owned by user")
+
+    # Remove related posts first
+    db.query(PouchPost).filter_by(pouch_id=pouch_id).delete()
+
+    # Delete pouch
+    db.delete(pouch)
+    db.commit()
+
+    return {"success": True, "message": "Pouch deleted successfully"}
+
+@router.delete("/pouch/comment/{comment_id}", status_code=status.HTTP_200_OK)
+async def delete_pouch_comment(
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    comment = db.query(PouchComment).filter_by(id=comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Allow deleting own comment or owner's pouch comment
+    pouch = db.query(Pouch).filter_by(id=comment.pouch_id).first()
+    if comment.user_id != current_user.id and pouch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to delete this comment")
+
+    db.delete(comment)
+    db.commit()
+    return {"success": True, "message": "Comment deleted"}
+
+@router.delete("/pouches/{pouch_id}/commentsdisable", status_code=status.HTTP_200_OK)
+async def delete_all_comments_and_disable(
+    pouch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    pouch = db.query(Pouch).filter_by(id=pouch_id, user_id=current_user.id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found or not owned by user")
+
+    # Delete all comments
+    db.query(PouchComment).filter_by(pouch_id=pouch_id).delete()
+
+    # Disable future comments
+    pouch.comments_disabled = True
+    db.commit()
+
+    return {"success": True, "message": "All comments deleted and commenting disabled"}
+
+@router.delete("/pouch/{pouch_id}/comments", status_code=status.HTTP_200_OK)
+async def delete_all_comments_and_disable(
+    pouch_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    pouch = db.query(Pouch).filter_by(id=pouch_id, user_id=current_user.id).first()
+    if not pouch:
+        raise HTTPException(status_code=404, detail="Pouch not found or not owned by user")
+
+    # Delete all comments
+    db.query(PouchComment).filter_by(pouch_id=pouch_id).delete()
+
+    # Disable future comments
+    db.commit()
+
+    return {"success": True, "message": "All comments of the pouch are deleted"}

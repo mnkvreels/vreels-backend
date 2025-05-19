@@ -1,8 +1,8 @@
 from sqlalchemy import VARCHAR
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..models.report import ReportPost, ReportUser, ReportComment, ReportReason
-from ..models.post import Comment, Post
+from ..models.report import ReportPost, ReportUser, ReportComment, ReportReason, ReportPouch, ReportPouchComment
+from ..models.post import Comment, Post, Pouch, PouchComment
 from ..models.user import User
 from .enums import ReportReasonEnum
 
@@ -278,3 +278,71 @@ async def get_reported_comments_by_user_svc(db: Session, user_id: int, page: int
 #         "total_pages": (total_count + limit - 1) // limit,
 #         "data": result
 #     }
+
+async def report_pouch_svc(pouch_id: int, reported_by: int, reason: str, description: str, db: Session):
+    try:
+        pouch = db.query(Pouch).filter(Pouch.id == pouch_id).first()
+        if not pouch:
+            raise HTTPException(status_code=400, detail="Pouch does not exist.")
+        
+        existing_report = db.query(ReportPouch).filter_by(pouch_id=pouch_id, reported_by=reported_by).first()
+        if existing_report:
+            raise HTTPException(status_code=400, detail="You have already reported this pouch.")
+
+        report_reason = db.query(ReportReason).filter(ReportReason.report_reason_name.ilike(reason)).first()
+        if not report_reason:
+            raise HTTPException(status_code=400, detail="Invalid report reason.")
+
+        report = ReportPouch(
+            pouch_id=pouch_id,
+            reported_by=reported_by,
+            report_reason_id=report_reason.report_reason_id,
+            report_reason=report_reason.report_reason_name,
+            description=description
+        )
+        db.add(report)
+
+        pouch.report_count = (pouch.report_count or 0) + 1
+
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Error reporting pouch: {str(e)}")
+
+    return {"message": "Pouch reported successfully."}
+
+async def report_pouch_comment_svc(comment_id: int, reported_by: int, reason: str, description: str, db: Session):
+    try:
+        comment = db.query(PouchComment).filter(PouchComment.id == comment_id).first()
+        if not comment:
+            raise HTTPException(status_code=400, detail="Comment does not exist.")
+
+        existing_report = db.query(ReportPouchComment).filter_by(comment_id=comment_id, reported_by=reported_by).first()
+        if existing_report:
+            raise HTTPException(status_code=400, detail="You have already reported this comment.")
+
+        report_reason = db.query(ReportReason).filter(ReportReason.report_reason_name.ilike(reason)).first()
+        if not report_reason:
+            raise HTTPException(status_code=400, detail="Invalid report reason.")
+
+        report = ReportPouchComment(
+            comment_id=comment_id,
+            reported_by=reported_by,
+            report_reason_id=report_reason.report_reason_id,
+            report_reason=report_reason.report_reason_name,
+            description=description
+        )
+        db.add(report)
+
+        comment.report_count = (comment.report_count or 0) + 1
+
+        db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Error reporting pouch comment: {str(e)}")
+
+    return {"message": "Pouch comment reported successfully."}

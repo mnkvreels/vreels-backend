@@ -18,6 +18,16 @@ class ReportCommentRequest(BaseModel):
     description: Optional[str] = None
     reason: ReportReasonEnum
 
+class ReportPouchRequest(BaseModel):
+    pouch_id: int
+    description: Optional[str] = None
+    reason: ReportReasonEnum
+
+class ReportPouchCommentRequest(BaseModel):
+    comment_id: int
+    description: Optional[str] = None
+    reason: ReportReasonEnum
+
 class ReportReasonResponse(BaseModel):
     report_reason_id: int
     report_reason_name: str

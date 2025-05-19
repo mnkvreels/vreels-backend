@@ -11,13 +11,17 @@ from .schemas import (
     ReportUserRequest,
     ReportCommentRequest,
     ReportIssueRequest,
-    ReportReasonResponse
+    ReportReasonResponse,
+    ReportPouchRequest,
+    ReportPouchCommentRequest
 )
 from typing import List
 from .service import (
     report_post_svc,
     report_user_svc,
     report_comment_svc,
+    report_pouch_svc,
+    report_pouch_comment_svc,
     get_reported_posts_by_user_svc,
     get_reported_users_by_user_svc,
     get_reported_comments_by_user_svc
@@ -43,6 +47,24 @@ async def report_comment(data: ReportCommentRequest, db: Session = Depends(get_d
 async def get_report_reasons(db: Session = Depends(get_db)):
     reasons = db.query(ReportReason).order_by(ReportReason.created_at.desc()).all()
     return reasons
+
+@router.post("/pouch")
+async def report_pouch(
+    data: ReportPouchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return await report_pouch_svc(data.pouch_id, current_user.id, data.reason, data.description, db)
+
+
+@router.post("/pouch-comment")
+async def report_pouch_comment(
+    data: ReportPouchCommentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return await report_pouch_comment_svc(data.comment_id, current_user.id, data.reason, data.description, db)
+
 
 # @router.post("/chat")
 # async def report_chat(data: ReportChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

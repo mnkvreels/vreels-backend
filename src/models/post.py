@@ -172,6 +172,8 @@ class Pouch(Base):
     likes_count = Column(Integer, default=0)
     comments_count = Column(Integer, default=0)
     save_count = Column(Integer, default=0)
+    report_count = Column(Integer, default=0)
+    comments_disabled = Column(Boolean, default=False, nullable=False)
 
     user = relationship("User", back_populates="pouches")
     pixs = relationship("Post", secondary="pouch_posts", back_populates="pouches")
