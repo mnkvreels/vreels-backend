@@ -942,12 +942,14 @@ async def get_saved_posts_svc(
             data.append({
                 "id": saved_pouch_entry.id,  # ID from user_saved_pouches
                 "pouch_id": pouch.id,
+                "pouch_preview": media_list[:3],
                 "content": pouch.description,
                 "location": pouch.location,
                 "author_id": pouch.user_id,
                 "created_at": pouch.created_at,
                 "likes_count": pouch.likes_count,
                 "comments_count": pouch.comments_count,
+                "save_count": pouch.save_count,
                 "save_count": pouch.save_count,
                 "visibility": pouch.visibility,
                 "username": pouch.user.username if pouch.user else None,
@@ -1731,13 +1733,15 @@ async def get_user_liked_posts_svc(
 
             data.append({
                 "id": like_entry.id,  # ID from pouch_likes table
-                "pouch_id": pouch.id,
+                "pouch_id": pouch.id, 
+                "pouch_preview": media_list[:3],
                 "content": pouch.description,
                 "location": pouch.location,
                 "author_id": pouch.user_id,
                 "created_at": pouch.created_at,
                 "likes_count": pouch.likes_count,
                 "comments_count": pouch.comments_count,
+                "save_count": pouch.save_count,
                 "visibility": pouch.visibility,
                 "username": pouch.user.username if pouch.user else None,
                 "is_liked": True,
