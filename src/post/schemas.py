@@ -147,6 +147,7 @@ class PouchCreateRequest(BaseModel):
     description: Optional[str]
     visibility: Optional[VisibilityEnum]
     post_ids:Optional[List[int]]
+    comments_disabled:Optional[List[int]]
 
 class PouchUpdateRequest(BaseModel):
     name: Optional[str] = None

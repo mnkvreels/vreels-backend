@@ -1052,7 +1052,9 @@ async def preview_related_images(
     # 🔍 First, try exact match for category_of_content matching pouch name
     related_posts = (
         db.query(Post)
-        .filter(Post.category_of_content.ilike(request.name))
+        .filter(Post.category_of_content.ilike(request.name),
+        Post.media_type == "image"
+        )
         .all()
     )
 
@@ -1060,7 +1062,9 @@ async def preview_related_images(
     if not related_posts:
         related_posts = (
             db.query(Post)
-            .filter(Post.category_of_content.ilike(f"%{request.name}%"))
+            .filter(Post.category_of_content.ilike(f"%{request.name}%"),
+                    Post.media_type == "image"
+                    )
             .all()
         )
 
