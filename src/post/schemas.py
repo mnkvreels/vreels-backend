@@ -111,6 +111,7 @@ class PostResponse(BaseModel):
     location: Optional[str]
     created_at: datetime
     visibility: str
+    comments_disabled: Optional[bool]
     category_of_content: Optional[str]
     media_type: Optional[str]
     thumbnail: Optional[str]

@@ -654,7 +654,8 @@ async def comment_on_post_svc(db: Session, post_id: int, user_id: int, content: 
     # Create the comment
     comment = Comment(content=content, post_id=post_id, user_id=user_id, created_at=datetime.now())
     db.add(comment)
-    post.comments_count += 1
+    db.flush()
+    post.comments_count = db.query(func.count(Comment.id)).filter(Comment.post_id == post_id).scalar()
 
     # Add like activity
     comment_activity = Activity(

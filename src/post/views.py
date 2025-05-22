@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func,select,insert,desc
+from sqlalchemy.exc import IntegrityError
 from src.models.post import Like,Comment, PouchComment
 from pydantic import BaseModel
 from datetime import *
@@ -111,6 +112,7 @@ async def create_post(
     category_of_content: Optional[str] = Form(None),
     video_length: Optional[int] = Form(None),
     hashtags: Optional[str] = Form(None),
+    comments_disabled: Optional[bool] = Form(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -136,7 +138,8 @@ async def create_post(
         media_type=media_type,
         thumbnail=thumbnail_url,
         video_length=0 if media_type == "image" else video_length,
-        hashtags=hashtags_list
+        hashtags=hashtags_list,
+        comments_disabled=comments_disabled
     )
 
     # Create the post with the file URL (if any)
@@ -927,7 +930,11 @@ async def search_pix(
                 "image_url": post.media,
                 "user": {"name": post.author.username},
                 "category": post.category_of_content,
-                "tags": [h.name for h in post.hashtags]
+                "tags": [h.name for h in post.hashtags],
+                "like_count": post.likes_count,
+                "share_count": post.share_count,
+                "comment_count": post.comments_count,
+                "save_count": post.save_count
             }
             for post in posts
         ]
@@ -1094,6 +1101,14 @@ async def create_pouch(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Check if pouch name already exists for this user
+    existing = db.query(Pouch).filter_by(user_id=current_user.id, name=request.name).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You already have a pouch with this name."
+        )
+    
     # Create the pouch with provided details
     pouch = Pouch(
         name=request.name,
@@ -1116,8 +1131,14 @@ async def create_pouch(
         for post_id_tuple in valid_post_ids:
             post_id = post_id_tuple[0]
             db.add(PouchPost(pouch_id=pouch.id, post_id=post_id))
-
-    db.commit()
+    try:
+       db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database constraint error. Please try again."
+        )
 
     return {
         "success": True,
